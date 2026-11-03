@@ -19,7 +19,9 @@ to each one on GitHub and its open pull requests underneath.
 
 The status bar at the bottom shows how much space the working directory takes
 up on disk and how much is free on its volume, and each repository shows its
-own size. All of it is measured again after every scan, update and cleanup.
+own size. All of it is measured again after every scan, update and cleanup,
+and the free space is also re-read every second, so it follows whatever else
+is writing to the disk.
 Cleanup logs the space it freed: the size of each worktree it removed.
 
 A pull request in its base branch's merge queue shows its place in the queue

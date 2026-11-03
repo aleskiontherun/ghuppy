@@ -127,7 +127,8 @@ struct WorkspaceView: View {
     }
 
     /// The working directory's size on disk and the free space left on its
-    /// volume, refreshed after each scan, update and cleanup.
+    /// volume, both refreshed after each scan, update and cleanup, and the
+    /// free space also every second.
     private var statusBar: some View {
         HStack(spacing: 6) {
             HStack(spacing: 6) {
@@ -155,6 +156,14 @@ struct WorkspaceView: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
+        // Reading free space is one statfs call, so it is polled the way
+        // Finder's status bar does, for as long as the bar is on screen.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                model.refreshFreeSpace()
+            }
+        }
     }
 
     @ViewBuilder
