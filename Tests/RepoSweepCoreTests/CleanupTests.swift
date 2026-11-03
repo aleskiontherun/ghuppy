@@ -274,15 +274,21 @@ final class LogSink {
 
         let other = f.dir.appendingPathComponent("other")
         try await f.sh(f.dir, "clone", "-q", f.origin.path, other.path)
-        try "new".write(to: other.appendingPathComponent("new"), atomically: true, encoding: .utf8)
-        try await f.sh(other, "add", "new")
-        try await f.sh(other, "-c", "user.email=t@e.com", "-c", "user.name=T", "commit", "-q", "-m", "new")
+        for file in ["new", "newer"] {
+            try file.write(to: other.appendingPathComponent(file), atomically: true, encoding: .utf8)
+            try await f.sh(other, "add", file)
+            try await f.sh(other, "-c", "user.email=t@e.com", "-c", "user.name=T", "commit", "-q", "-m", file)
+        }
         try await f.sh(other, "push", "-q", "origin", "main")
 
         let sink = await LogSink()
-        try await f.repo.update(log: sink.logger)
-        #expect(FileManager.default.fileExists(atPath: f.clone.appendingPathComponent("new").path))
+        #expect(try await f.repo.update(log: sink.logger) == 2)
+        #expect(FileManager.default.fileExists(atPath: f.clone.appendingPathComponent("newer").path))
         #expect(await f.repo.status().behind == 0)
+        #expect(await sink.lines.contains("pulled 2 commits into main"))
+
+        #expect(try await f.repo.update(log: sink.logger) == 0)
+        #expect(await sink.lines.last == "main is up to date")
     }
 
     /// Another git fetching at the same moment -- an IDE, right after a merge

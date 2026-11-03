@@ -64,6 +64,8 @@ final class Workspace: Identifiable {
     var measuringSize = false
     /// What the Cleanup all running now has freed so far.
     @ObservationIgnored private var freedByCleanupAll: Int64 = 0
+    /// How many commits the Update all running now has pulled so far.
+    @ObservationIgnored private var pulledByUpdateAll = 0
     @ObservationIgnored private var measurement: Task<Void, Never>?
     @ObservationIgnored var onRootChange: (() -> Void)?
 
@@ -217,9 +219,10 @@ final class Workspace: Identifiable {
         while scanning {
             try? await Task.sleep(for: .milliseconds(100))
         }
+        pulledByUpdateAll = 0
         await discover()
         await forEach(orderedRepos) { await self.update($0) }
-        append(nil, "Update all finished")
+        append(nil, "Update all finished, pulled \(GitRepo.commits(pulledByUpdateAll))")
         measureDisk()
     }
 
@@ -236,8 +239,9 @@ final class Workspace: Identifiable {
 
     func update(_ repo: RepoState) async {
         await perform("Updating…", on: repo) {
-            try await repo.git.update(log: self.logger(for: repo))
-            return "Updated"
+            let pulled = try await repo.git.update(log: self.logger(for: repo))
+            self.pulledByUpdateAll += pulled
+            return pulled == 0 ? "Up to date" : "Pulled \(GitRepo.commits(pulled))"
         }
         await refreshPRs(repo)
         // A bulk action measures once, when it's done. The whole working
