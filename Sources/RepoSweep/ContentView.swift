@@ -155,6 +155,14 @@ struct WorkspaceView: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
+        // Reading free space is one statfs call, so it is polled the way
+        // Finder's status bar does, for as long as the bar is on screen.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                model.refreshFreeSpace()
+            }
+        }
     }
 
     @ViewBuilder

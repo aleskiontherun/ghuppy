@@ -147,6 +147,15 @@ final class Workspace: Identifiable {
         }
     }
 
+    /// Re-reads the free space beside the working directory, for the status
+    /// bar to call on a timer: files created or deleted by anything on the
+    /// machine change it, not only by RepoSweep. It writes only when the
+    /// figure moved, so an idle volume doesn't redraw the bar.
+    func refreshFreeSpace() {
+        guard let root, let free = DiskUsage.freeSpace(at: root), free != freeSpace else { return }
+        freeSpace = free
+    }
+
     /// Re-reads which repositories are under the root: ones added since the
     /// last look join the list, deleted ones leave it, and the rest keep
     /// their state. Returns false when there is no root, or another
