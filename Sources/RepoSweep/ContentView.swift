@@ -127,7 +127,8 @@ struct WorkspaceView: View {
     }
 
     /// The working directory's size on disk and the free space left on its
-    /// volume, refreshed after each scan, update and cleanup.
+    /// volume, both refreshed after each scan, update and cleanup, and the
+    /// free space also every second.
     private var statusBar: some View {
         HStack(spacing: 6) {
             HStack(spacing: 6) {
