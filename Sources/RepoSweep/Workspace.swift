@@ -192,7 +192,13 @@ final class Workspace: Identifiable {
         repo.loadingPRs = true
         defer { repo.loadingPRs = false }
         do {
-            repo.pullRequests = try await PullRequests.open(in: github, cwd: repo.git.path)
+            var prs = try await PullRequests.open(in: github, cwd: repo.git.path)
+            do {
+                prs = try await PullRequests.addingMergeQueue(to: prs, in: github, cwd: repo.git.path)
+            } catch {
+                append(repo.name, "merge queue: \(error.localizedDescription)", isError: true)
+            }
+            repo.pullRequests = prs
             repo.prError = nil
         } catch {
             repo.prError = error.localizedDescription

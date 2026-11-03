@@ -25,7 +25,8 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
     public let updatedAt: Date
     public let statusCheckRollup: [Check]?
     /// The PR's place in its base branch's merge queue, nil when it isn't
-    /// in one. `gh pr list` has no field for it, so `open` fills it in.
+    /// in one. `gh pr list` has no field for it, so `addingMergeQueue` fills
+    /// it in.
     public internal(set) var mergeQueue: QueueEntry?
 
     public struct QueueEntry: Sendable, Decodable, Equatable {
@@ -121,9 +122,15 @@ public enum PullRequests {
         guard result.ok else {
             throw ShellError(message: result.err.isEmpty ? "gh pr list failed" : result.err)
         }
-        var prs = try decode(result.stdout)
+        return try decode(result.stdout)
+    }
+
+    /// `prs` with their merge queue entries filled in. Kept apart from `open`
+    /// so a failed lookup costs only the badges, not the list.
+    public static func addingMergeQueue(to prs: [PullRequest], in repo: GitHubRepo, cwd: URL) async throws -> [PullRequest] {
         guard !prs.isEmpty else { return prs }
         let queue = try await queueEntries(in: repo, cwd: cwd)
+        var prs = prs
         for index in prs.indices {
             prs[index].mergeQueue = queue[prs[index].number]
         }
