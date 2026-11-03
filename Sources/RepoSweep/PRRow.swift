@@ -25,6 +25,12 @@ struct PRRow: View {
 
             HStack(spacing: 6) {
                 if pr.isDraft { Badge("Draft", color: .gray) }
+                if let entry = pr.mergeQueue {
+                    Badge("Queued #\(entry.position)", color: entry.isUnmergeable ? .red : .purple)
+                        .help(entry.isUnmergeable
+                            ? "In the merge queue, but it can't be merged"
+                            : "In the merge queue, position \(entry.position)")
+                }
                 if pr.hasConflicts { Badge("Conflicts", color: .red) }
                 switch pr.review {
                 case .approved: Badge("Approved", color: .green)

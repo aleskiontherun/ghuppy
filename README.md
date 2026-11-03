@@ -20,6 +20,10 @@ up on disk and how much is free on its volume, and each repository shows its
 own size. All of it is measured again after every scan, update and cleanup.
 Cleanup logs the space it freed: the size of each worktree it removed.
 
+A pull request in its base branch's merge queue shows its place in the queue
+(**Queued #1** is next to merge), in red once the queue finds it can't be
+merged.
+
 Pin a repository (the pin button, or right-click) to keep it at the top of
 the list. Pins are saved, and shared by every tab that lists the repository.
 

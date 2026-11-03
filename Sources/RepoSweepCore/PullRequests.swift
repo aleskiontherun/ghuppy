@@ -24,6 +24,19 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
     public let mergeable: String?
     public let updatedAt: Date
     public let statusCheckRollup: [Check]?
+    /// The PR's place in its base branch's merge queue, nil when it isn't
+    /// in one. `gh pr list` has no field for it, so `addingMergeQueue` fills
+    /// it in.
+    public internal(set) var mergeQueue: QueueEntry?
+
+    public struct QueueEntry: Sendable, Decodable, Equatable {
+        /// 1 is the next to merge.
+        public let position: Int
+        /// `QUEUED`, `AWAITING_CHECKS`, `MERGEABLE`, `UNMERGEABLE` or `LOCKED`.
+        public let state: String
+
+        public var isUnmergeable: Bool { state == "UNMERGEABLE" }
+    }
 
     public var id: Int { number }
 
@@ -110,6 +123,50 @@ public enum PullRequests {
             throw ShellError(message: result.err.isEmpty ? "gh pr list failed" : result.err)
         }
         return try decode(result.stdout)
+    }
+
+    /// `prs` with their merge queue entries filled in. Kept apart from `open`
+    /// so a failed lookup costs only the badges, not the list.
+    public static func addingMergeQueue(to prs: [PullRequest], in repo: GitHubRepo, cwd: URL) async throws -> [PullRequest] {
+        guard !prs.isEmpty else { return prs }
+        let queue = try await queueEntries(in: repo, cwd: cwd)
+        var prs = prs
+        for index in prs.indices {
+            prs[index].mergeQueue = queue[prs[index].number]
+        }
+        return prs
+    }
+
+    /// The merge queue entries of a repository's open PRs, by PR number.
+    /// Asks for the same 100 PRs `gh pr list` lists: the newest first.
+    static func queueEntries(in repo: GitHubRepo, cwd: URL) async throws -> [Int: PullRequest.QueueEntry] {
+        let query = """
+        query($owner: String!, $name: String!) {
+          repository(owner: $owner, name: $name) {
+            pullRequests(states: OPEN, first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
+              nodes { number mergeQueueEntry { position state } }
+            }
+          }
+        }
+        """
+        let result = await gh([
+            "api", "graphql", "-f", "query=\(query)", "-f", "owner=\(repo.owner)", "-f", "name=\(repo.name)",
+            "--jq", ".data.repository.pullRequests.nodes",
+        ], cwd: cwd)
+        guard result.ok else {
+            throw ShellError(message: "merge queue lookup failed: \(result.err)")
+        }
+        return try decodeQueueEntries(result.stdout)
+    }
+
+    public static func decodeQueueEntries(_ json: String) throws -> [Int: PullRequest.QueueEntry] {
+        struct Node: Decodable {
+            let number: Int
+            let mergeQueueEntry: PullRequest.QueueEntry?
+        }
+        let nodes = try JSONDecoder().decode([Node].self, from: Data(json.utf8))
+        return Dictionary(nodes.compactMap { node in node.mergeQueueEntry.map { (node.number, $0) } },
+                          uniquingKeysWith: { first, _ in first })
     }
 
     public static func decode(_ json: String) throws -> [PullRequest] {
