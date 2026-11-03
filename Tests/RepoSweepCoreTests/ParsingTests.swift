@@ -45,6 +45,7 @@ import Testing
         #expect(pr.review == .approved)
         #expect(pr.hasConflicts)
         #expect(pr.checks == .none)
+        #expect(pr.mergeQueue == nil)
     }
 
     @Test func passing() throws {
@@ -70,5 +71,20 @@ import Testing
          {"__typename": "StatusContext", "state": "FAILURE"}]
         """)
         #expect(pr.checks == .failing)
+    }
+}
+
+@Suite struct MergeQueueDecoding {
+    @Test func entriesByNumber() throws {
+        let entries = try PullRequests.decodeQueueEntries("""
+        [{"number": 7, "mergeQueueEntry": {"position": 2, "state": "AWAITING_CHECKS"}},
+         {"number": 8, "mergeQueueEntry": null},
+         {"number": 9, "mergeQueueEntry": {"position": 1, "state": "UNMERGEABLE"}}]
+        """)
+        #expect(entries.count == 2)
+        #expect(entries[7] == PullRequest.QueueEntry(position: 2, state: "AWAITING_CHECKS"))
+        #expect(entries[8] == nil)
+        #expect(entries[9]?.isUnmergeable == true)
+        #expect(entries[7]?.isUnmergeable == false)
     }
 }
