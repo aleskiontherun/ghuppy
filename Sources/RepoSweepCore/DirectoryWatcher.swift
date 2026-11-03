@@ -49,6 +49,10 @@ public final class DirectoryWatcher: @unchecked Sendable {
     deinit {
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
+        // A callback already running on the queue still reads `handler`,
+        // which goes when this does; the stream is invalidated, so none
+        // starts after this.
+        queue.sync {}
         FSEventStreamRelease(stream)
     }
 }
