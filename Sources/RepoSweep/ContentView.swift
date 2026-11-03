@@ -39,7 +39,7 @@ struct WorkspaceView: View {
         VStack(spacing: 0) {
             directoryBar
             Divider()
-            actionBar(dryRun: $model.dryRun)
+            actionBar(pinnedOnly: $model.pinnedOnly, dryRun: $model.dryRun)
             Divider()
             repositoryList
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -80,7 +80,7 @@ struct WorkspaceView: View {
         .padding(.vertical, 10)
     }
 
-    private func actionBar(dryRun: Binding<Bool>) -> some View {
+    private func actionBar(pinnedOnly: Binding<Bool>, dryRun: Binding<Bool>) -> some View {
         HStack(spacing: 10) {
             Button {
                 Task { await model.updateAll() }
@@ -95,6 +95,10 @@ struct WorkspaceView: View {
                 Label("Cleanup all", systemImage: "sparkles")
             }
             .help("Delete local branches that were merged, in every repository (⇧⌘K)")
+
+            Toggle("Pinned only", isOn: pinnedOnly)
+                .toggleStyle(.checkbox)
+                .help("Update and clean up only the pinned repositories")
 
             Toggle("Dry run", isOn: dryRun)
                 .toggleStyle(.checkbox)
