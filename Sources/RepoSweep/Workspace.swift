@@ -73,6 +73,12 @@ final class Workspace: Identifiable {
     /// How many commits the Update all running now has pulled so far.
     @ObservationIgnored private var pulledByUpdateAll = 0
     @ObservationIgnored private var measurement: Task<Void, Never>?
+    /// Tells when something under the working directory changed.
+    @ObservationIgnored private var watcher: (root: URL, watcher: DirectoryWatcher)?
+    /// Whether the figures are known to be behind the disk, and the loop
+    /// measuring them again while they are.
+    @ObservationIgnored private var sizesStale = false
+    @ObservationIgnored private var remeasuring: Task<Void, Never>?
     @ObservationIgnored var onRootChange: (() -> Void)?
 
     var title: String { root?.lastPathComponent ?? "New Tab" }
@@ -118,10 +124,12 @@ final class Workspace: Identifiable {
     /// Re-measures the working directory's size, each repository's share of
     /// it and the free space beside it, in one walk off the main actor. A
     /// measurement still running is cancelled, so the figures shown are
-    /// always the latest root's.
+    /// always the latest root's. It also starts watching the root, so the
+    /// figures follow the disk from then on.
     func measureDisk() {
         measurement?.cancel()
         guard let root else { return }
+        watchForChanges(in: root)
         let paths = repos.map(\.git.path)
         // Free space is cheap to read, so it doesn't wait for the walk.
         freeSpace = DiskUsage.freeSpace(at: root)
@@ -144,6 +152,34 @@ final class Workspace: Identifiable {
             }
             freeSpace = measured.1
             measuringSize = false
+        }
+    }
+
+    private func watchForChanges(in root: URL) {
+        guard watcher?.root != root else { return }
+        watcher = DirectoryWatcher(directory: root) { [weak self] in
+            Task { @MainActor in self?.diskChanged() }
+        }.map { (root, $0) }
+    }
+
+    /// Something under the working directory changed, by RepoSweep's own
+    /// git or by anything else. Walking the tree again is far dearer than
+    /// reading the free space, so the sizes are measured again after the
+    /// changes settle, and then at most every few seconds however busy the
+    /// tree is. A bulk action measures once when it's done, so changes made
+    /// meanwhile are left to that.
+    private func diskChanged() {
+        guard bulkActivity == nil else { return }
+        sizesStale = true
+        guard remeasuring == nil else { return }
+        remeasuring = Task {
+            while sizesStale && !Task.isCancelled {
+                sizesStale = false
+                measureDisk()
+                await measurement?.value
+                try? await Task.sleep(for: .seconds(5))
+            }
+            remeasuring = nil
         }
     }
 
