@@ -50,12 +50,18 @@ final class Workspace: Identifiable {
         let pins = Pins.shared
         return repos.filter { pins.isPinned($0.git.path) } + repos.filter { !pins.isPinned($0.git.path) }
     }
+    /// The repositories Update all and Cleanup all act on.
+    private var bulkRepos: [RepoState] {
+        pinnedOnly ? orderedRepos.filter { Pins.shared.isPinned($0.git.path) } : orderedRepos
+    }
     var log: [LogLine] = []
     var scanning = false
     /// Set once the first scan has started, so switching back to a tab
     /// doesn't rescan it.
     var scanned = false
     var bulkActivity: String?
+    /// Whether Update all and Cleanup all act on the pinned repositories only.
+    var pinnedOnly = false
     var dryRun = false
     /// The working directory's size on disk, nil until first measured.
     var directorySize: Int64?
@@ -221,7 +227,7 @@ final class Workspace: Identifiable {
         }
         pulledByUpdateAll = 0
         await discover()
-        await forEach(orderedRepos) { await self.update($0) }
+        await forEach(bulkRepos) { await self.update($0) }
         append(nil, "Update all finished, pulled \(GitRepo.commits(pulledByUpdateAll))")
         measureDisk()
     }
@@ -231,7 +237,7 @@ final class Workspace: Identifiable {
         bulkActivity = dryRun ? "Cleaning up (dry run)…" : "Cleaning up…"
         defer { bulkActivity = nil }
         freedByCleanupAll = 0
-        await forEach(orderedRepos) { await self.cleanup($0) }
+        await forEach(bulkRepos) { await self.cleanup($0) }
         append(nil, dryRun ? "Cleanup all finished (dry run, nothing deleted)"
                            : "Cleanup all finished, freed \(Self.bytes(freedByCleanupAll))")
         measureDisk()

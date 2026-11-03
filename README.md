@@ -28,6 +28,8 @@ merged.
 
 Pin a repository (the pin button, or right-click) to keep it at the top of
 the list. Pins are saved, and shared by every tab that lists the repository.
+Tick **Pinned only** to have Update all and Cleanup all act on the pinned
+repositories alone.
 
 ## What Cleanup deletes
 
