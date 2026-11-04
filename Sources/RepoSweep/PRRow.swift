@@ -26,7 +26,8 @@ struct PRRow: View {
             HStack(spacing: 6) {
                 if pr.mergedAt != nil { Badge("Merged", color: .purple) }
                 if pr.mergedAt == nil {
-                    if pr.isDraft { Badge("Draft", color: .gray) } else { Badge("Open", color: .green) }
+                    if pr.isDraft { Badge("Draft", color: .gray) }
+                    if pr.isReadyToMerge { Badge("Ready", color: .green) }
                 }
                 if let entry = pr.mergeQueue {
                     Badge("Queued #\(entry.position)", color: entry.isUnmergeable ? .red : .darkYellow)

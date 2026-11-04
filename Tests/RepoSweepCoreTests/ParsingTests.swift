@@ -48,6 +48,27 @@ import Testing
         #expect(pr.mergeQueue == nil)
     }
 
+    @Test func readyToMerge() throws {
+        func ready(_ rollup: String, review: String, mergeable: String = "MERGEABLE", draft: Bool = false) throws -> Bool {
+            let json = """
+            [{"number": 7, "title": "t", "url": "https://github.com/octo/hello/pull/7",
+              "isDraft": \(draft), "author": null, "headRefName": "b",
+              "reviewDecision": \(review), "mergeable": "\(mergeable)",
+              "updatedAt": "2026-10-29T12:00:00Z", "statusCheckRollup": \(rollup)}]
+            """
+            return try #require(PullRequests.decode(json).first).isReadyToMerge
+        }
+        let ok = #"[{"__typename": "StatusContext", "state": "SUCCESS"}]"#
+        let running = #"[{"__typename": "CheckRun", "status": "IN_PROGRESS", "conclusion": ""}]"#
+        #expect(try ready(ok, review: #""APPROVED""#))
+        #expect(try ready("[]", review: "null"))
+        #expect(try !ready(ok, review: #""REVIEW_REQUIRED""#))
+        #expect(try !ready(ok, review: #""CHANGES_REQUESTED""#))
+        #expect(try !ready(running, review: #""APPROVED""#))
+        #expect(try !ready(ok, review: #""APPROVED""#, mergeable: "CONFLICTING"))
+        #expect(try !ready(ok, review: #""APPROVED""#, draft: true))
+    }
+
     @Test func passing() throws {
         let pr = try pr(rollup: """
         [{"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "SUCCESS"},
