@@ -74,17 +74,80 @@ import Testing
     }
 }
 
-@Suite struct MergeQueueDecoding {
-    @Test func entriesByNumber() throws {
-        let entries = try PullRequests.decodeQueueEntries("""
-        [{"number": 7, "mergeQueueEntry": {"position": 2, "state": "AWAITING_CHECKS"}},
-         {"number": 8, "mergeQueueEntry": null},
-         {"number": 9, "mergeQueueEntry": {"position": 1, "state": "UNMERGEABLE"}}]
+@Suite struct ExtrasDecoding {
+    func merged(_ number: Int, at mergedAt: String, updated: String = "2026-11-01T00:00:00Z") -> String {
+        """
+        {"number": \(number), "title": "PR \(number)", "url": "https://github.com/octo/hello/pull/\(number)",
+         "isDraft": false, "author": {"login": "octo"}, "headRefName": "branch-\(number)",
+         "updatedAt": "\(updated)", "mergedAt": "\(mergedAt)"}
+        """
+    }
+
+    func extras(open: String = "", merged: [String] = []) throws -> PullRequests.Extras {
+        try PullRequests.decodeExtras("""
+        {"open": {"nodes": [\(open)]}, "merged": {"nodes": [\(merged.joined(separator: ","))]}}
         """)
+    }
+
+    @Test func queueEntriesByNumber() throws {
+        let entries = try extras(open: """
+        {"number": 7, "mergeQueueEntry": {"position": 2, "state": "AWAITING_CHECKS"}},
+        {"number": 8, "mergeQueueEntry": null},
+        {"number": 9, "mergeQueueEntry": {"position": 1, "state": "UNMERGEABLE"}}
+        """).queue
         #expect(entries.count == 2)
         #expect(entries[7] == PullRequest.QueueEntry(position: 2, state: "AWAITING_CHECKS"))
         #expect(entries[8] == nil)
         #expect(entries[9]?.isUnmergeable == true)
         #expect(entries[7]?.isUnmergeable == false)
+    }
+
+    @Test func mergedAreTheLastThreeByMergeTimeNotUpdateTime() throws {
+        let merged = try extras(merged: [
+            // Merged long ago, commented on since: first in update order.
+            self.merged(1, at: "2026-01-01T00:00:00Z", updated: "2026-11-03T00:00:00Z"),
+            self.merged(2, at: "2026-10-30T00:00:00Z"),
+            self.merged(3, at: "2026-10-31T00:00:00Z"),
+            self.merged(4, at: "2026-10-29T00:00:00Z"),
+            self.merged(5, at: "2026-10-28T00:00:00Z"),
+        ]).merged
+        #expect(merged.map(\.number) == [3, 2, 4])
+    }
+
+    @Test func mergedFields() throws {
+        let pr = try #require(extras(merged: [merged(1, at: "2026-10-30T00:00:00Z")]).merged.first)
+        #expect(pr.mergedAt == ISO8601DateFormatter().date(from: "2026-10-30T00:00:00Z"))
+        #expect(pr.checks == .none)
+        #expect(pr.review == .none)
+    }
+
+    @Test func fewerMergedThanShown() throws {
+        #expect(try extras(merged: [merged(1, at: "2026-10-30T00:00:00Z")]).merged.count == 1)
+        #expect(try extras().merged.isEmpty)
+    }
+}
+
+@Suite struct MergeQueueOrdering {
+    func prs(_ numbers: [Int]) throws -> [PullRequest] {
+        try PullRequests.decode("[" + numbers.map { number in
+            """
+            {"number": \(number), "title": "PR", "url": "https://github.com/octo/hello/pull/\(number)",
+             "isDraft": false, "headRefName": "branch", "updatedAt": "2026-10-29T12:00:00Z"}
+            """
+        }.joined(separator: ",") + "]")
+    }
+
+    @Test func queuedGoLastInQueueOrder() throws {
+        let ordered = PullRequests.applying(queue: [
+            5: .init(position: 2, state: "QUEUED"),
+            4: .init(position: 3, state: "QUEUED"),
+            2: .init(position: 1, state: "AWAITING_CHECKS"),
+        ], to: try prs([5, 4, 3, 2, 1]))
+        #expect(ordered.map(\.number) == [3, 1, 2, 5, 4])
+        #expect(ordered.map(\.mergeQueue?.position) == [nil, nil, 1, 2, 3])
+    }
+
+    @Test func nothingQueuedKeepsTheOrder() throws {
+        #expect(PullRequests.applying(queue: [:], to: try prs([3, 2, 1])).map(\.number) == [3, 2, 1])
     }
 }

@@ -24,6 +24,7 @@ struct PRRow: View {
             Spacer(minLength: 8)
 
             HStack(spacing: 6) {
+                if pr.mergedAt != nil { Badge("Merged", color: .purple) }
                 if pr.isDraft { Badge("Draft", color: .gray) }
                 if let entry = pr.mergeQueue {
                     Badge("Queued #\(entry.position)", color: entry.isUnmergeable ? .red : .purple)
@@ -40,7 +41,7 @@ struct PRRow: View {
                 }
             }
             Text(pr.author.map { "\($0.login) · " } ?? "")
-                + Text(pr.updatedAt, format: .relative(presentation: .named))
+                + Text(pr.mergedAt ?? pr.updatedAt, format: .relative(presentation: .named))
         }
         .font(.callout)
         .padding(.horizontal, 12)
@@ -50,6 +51,15 @@ struct PRRow: View {
 
     @ViewBuilder
     private var checksIcon: some View {
+        if pr.mergedAt != nil {
+            Image(systemName: "arrow.triangle.merge").foregroundStyle(.purple).help("Merged")
+        } else {
+            openChecksIcon
+        }
+    }
+
+    @ViewBuilder
+    private var openChecksIcon: some View {
         switch pr.checks {
         case .passing:
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).help("Checks passing")

@@ -23,10 +23,12 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
     public let reviewDecision: String?
     public let mergeable: String?
     public let updatedAt: Date
+    /// When the PR was merged, nil while it's open.
+    public let mergedAt: Date?
     public let statusCheckRollup: [Check]?
     /// The PR's place in its base branch's merge queue, nil when it isn't
-    /// in one. `gh pr list` has no field for it, so `addingMergeQueue` fills
-    /// it in.
+    /// in one. `gh pr list` has no field for it, so `applying(queue:to:)`
+    /// fills it in.
     public internal(set) var mergeQueue: QueueEntry?
 
     public struct QueueEntry: Sendable, Decodable, Equatable {
@@ -125,54 +127,90 @@ public enum PullRequests {
         return try decode(result.stdout)
     }
 
-    /// `prs` with their merge queue entries filled in. Kept apart from `open`
-    /// so a failed lookup costs only the badges, not the list.
-    public static func addingMergeQueue(to prs: [PullRequest], in repo: GitHubRepo, cwd: URL) async throws -> [PullRequest] {
-        guard !prs.isEmpty else { return prs }
-        let queue = try await queueEntries(in: repo, cwd: cwd)
-        var prs = prs
-        for index in prs.indices {
-            prs[index].mergeQueue = queue[prs[index].number]
-        }
-        return prs
+    /// What `gh pr list` can't say about the open PRs, and the latest merged
+    /// ones. Kept apart from `open` so a failed lookup costs only these, not
+    /// the list.
+    public struct Extras: Sendable, Equatable {
+        /// The merge queue entries of the open PRs, by PR number.
+        public let queue: [Int: PullRequest.QueueEntry]
+        /// The last merged first.
+        public let merged: [PullRequest]
     }
 
-    /// The merge queue entries of a repository's open PRs, by PR number.
-    /// Asks for the same 100 PRs `gh pr list` lists: the newest first.
-    static func queueEntries(in repo: GitHubRepo, cwd: URL) async throws -> [Int: PullRequest.QueueEntry] {
+    /// How many merged PRs a repository shows.
+    static let mergedShown = 3
+    /// How many recently updated merged PRs are searched for those. GitHub
+    /// can't order by merge time, but a PR is never updated before it's
+    /// merged, so the latest merges are near the top of this order, behind
+    /// only the older PRs that were touched since.
+    static let mergedSearched = 30
+
+    /// Asks for the same 100 open PRs `gh pr list` lists: the newest first.
+    /// One query for both, as a repository's PRs are reloaded on a timer and
+    /// every `gh` call counts against the GitHub rate limit.
+    public static func extras(in repo: GitHubRepo, cwd: URL) async throws -> Extras {
         let query = """
         query($owner: String!, $name: String!) {
           repository(owner: $owner, name: $name) {
-            pullRequests(states: OPEN, first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
+            open: pullRequests(states: OPEN, first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
               nodes { number mergeQueueEntry { position state } }
+            }
+            merged: pullRequests(states: MERGED, first: \(mergedSearched), orderBy: {field: UPDATED_AT, direction: DESC}) {
+              nodes { number title url isDraft author { login } headRefName updatedAt mergedAt }
             }
           }
         }
         """
         let result = await gh([
             "api", "graphql", "-f", "query=\(query)", "-f", "owner=\(repo.owner)", "-f", "name=\(repo.name)",
-            "--jq", ".data.repository.pullRequests.nodes",
+            "--jq", ".data.repository",
         ], cwd: cwd)
         guard result.ok else {
-            throw ShellError(message: "merge queue lookup failed: \(result.err)")
+            throw ShellError(message: "merge queue and merged pull requests lookup failed: \(result.err)")
         }
-        return try decodeQueueEntries(result.stdout)
+        return try decodeExtras(result.stdout)
     }
 
-    public static func decodeQueueEntries(_ json: String) throws -> [Int: PullRequest.QueueEntry] {
-        struct Node: Decodable {
+    public static func decodeExtras(_ json: String) throws -> Extras {
+        struct Connection<Node: Decodable>: Decodable {
+            let nodes: [Node]
+        }
+        struct OpenNode: Decodable {
             let number: Int
             let mergeQueueEntry: PullRequest.QueueEntry?
         }
-        let nodes = try JSONDecoder().decode([Node].self, from: Data(json.utf8))
-        return Dictionary(nodes.compactMap { node in node.mergeQueueEntry.map { (node.number, $0) } },
-                          uniquingKeysWith: { first, _ in first })
+        struct Response: Decodable {
+            let open: Connection<OpenNode>
+            let merged: Connection<PullRequest>
+        }
+        let response = try decoder.decode(Response.self, from: Data(json.utf8))
+        let queue = Dictionary(
+            response.open.nodes.compactMap { node in node.mergeQueueEntry.map { (node.number, $0) } },
+            uniquingKeysWith: { first, _ in first })
+        let merged = response.merged.nodes.sorted { ($0.mergedAt ?? .distantPast) > ($1.mergedAt ?? .distantPast) }
+        return Extras(queue: queue, merged: Array(merged.prefix(mergedShown)))
+    }
+
+    /// `prs` with their merge queue entries filled in, and the queued ones
+    /// moved to the end, the next to merge first.
+    public static func applying(queue: [Int: PullRequest.QueueEntry], to prs: [PullRequest]) -> [PullRequest] {
+        var prs = prs
+        for index in prs.indices {
+            prs[index].mergeQueue = queue[prs[index].number]
+        }
+        let queued = prs.filter { $0.mergeQueue != nil }
+            .sorted { ($0.mergeQueue?.position ?? 0) < ($1.mergeQueue?.position ?? 0) }
+        return prs.filter { $0.mergeQueue == nil } + queued
     }
 
     public static func decode(_ json: String) throws -> [PullRequest] {
+        try decoder.decode([PullRequest].self, from: Data(json.utf8))
+    }
+
+    private static var decoder: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode([PullRequest].self, from: Data(json.utf8))
+        return decoder
     }
 
     public enum BranchState: Sendable {
