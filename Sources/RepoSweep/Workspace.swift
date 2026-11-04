@@ -16,9 +16,18 @@ final class RepoState: Identifiable {
     let name: String
     var github: GitHubRepo?
     var status = LocalStatus()
+    /// The open pull requests, the ones in the merge queue last.
     var pullRequests: [PullRequest] = []
+    /// The latest merged pull requests, the last merged first.
+    var mergedPullRequests: [PullRequest] = []
     var prError: String?
+    /// Why the merge queue and merged pull requests last failed to load, nil
+    /// once they load again.
+    var extrasError: String?
     var loadingPRs = false
+    /// Whether the open pull requests have loaded at least once, which tells
+    /// an empty list from one still to come. Later reloads stay out of sight.
+    var prsLoaded = false
     /// What the repository is doing right now, shown next to its name.
     var activity: String?
     /// The outcome of the last update or cleanup.
@@ -39,10 +48,12 @@ final class RepoState: Identifiable {
 final class Workspace: Identifiable {
     /// How many repositories are fetched or cleaned at once.
     private static let concurrency = 6
+    /// How often, in seconds, the pull requests on screen are reloaded.
+    private static let prRefreshInterval: TimeInterval = 120
 
     let id = UUID()
     var root: URL? {
-        didSet { onRootChange?() }
+        didSet { onSavedStateChange?() }
     }
     var repos: [RepoState] = []
     /// `repos` as listed: pinned ones first, each group in path order.
@@ -50,7 +61,8 @@ final class Workspace: Identifiable {
         let pins = Pins.shared
         return repos.filter { pins.isPinned($0.git.path) } + repos.filter { !pins.isPinned($0.git.path) }
     }
-    /// The repositories Update all and Cleanup all act on.
+    /// The repositories Update all, Cleanup all and the timed pull request
+    /// reload act on.
     private var bulkRepos: [RepoState] {
         pinnedOnly ? orderedRepos.filter { Pins.shared.isPinned($0.git.path) } : orderedRepos
     }
@@ -60,8 +72,11 @@ final class Workspace: Identifiable {
     /// doesn't rescan it.
     var scanned = false
     var bulkActivity: String?
-    /// Whether Update all and Cleanup all act on the pinned repositories only.
-    var pinnedOnly = false
+    /// Whether Update all, Cleanup all and the timed pull request reload act
+    /// on the pinned repositories only.
+    var pinnedOnly: Bool {
+        didSet { onSavedStateChange?() }
+    }
     var dryRun = false
     /// The working directory's size on disk, nil until first measured.
     var directorySize: Int64?
@@ -79,7 +94,9 @@ final class Workspace: Identifiable {
     /// measuring them again while they are.
     @ObservationIgnored private var sizesStale = false
     @ObservationIgnored private var remeasuring: Task<Void, Never>?
-    @ObservationIgnored var onRootChange: (() -> Void)?
+    /// When the pull requests were last reloaded across the tab.
+    @ObservationIgnored private var prsRefreshed = Date.distantPast
+    @ObservationIgnored var onSavedStateChange: (() -> Void)?
 
     var title: String { root?.lastPathComponent ?? "New Tab" }
 
@@ -87,8 +104,9 @@ final class Workspace: Identifiable {
         [("git", Shell.gitPath), ("gh", Shell.ghPath)].compactMap { $0.1 == nil ? $0.0 : nil }
     }
 
-    init(root: URL? = nil) {
+    init(root: URL? = nil, pinnedOnly: Bool = false) {
         self.root = root
+        self.pinnedOnly = pinnedOnly
     }
 
     func chooseRoot() {
@@ -115,6 +133,7 @@ final class Workspace: Identifiable {
     func scan() async {
         guard await discover() else { return }
         measureDisk()
+        prsRefreshed = .now
         await forEach(orderedRepos) { repo in
             await self.refreshLocal(repo)
             await self.refreshPRs(repo)
@@ -236,9 +255,28 @@ final class Workspace: Identifiable {
         repo.status = await repo.git.status()
     }
 
+    /// Reloads the pull requests on a timer until cancelled, for the tab on
+    /// screen to run: GitHub's rate limit is shared, so tabs out of sight
+    /// don't spend it. A tab brought back after the interval has passed
+    /// reloads straight away.
+    func keepPRsFresh() async {
+        while !Task.isCancelled {
+            let wait = Self.prRefreshInterval + prsRefreshed.timeIntervalSinceNow
+            try? await Task.sleep(for: .seconds(max(wait, 0)))
+            guard !Task.isCancelled else { return }
+            prsRefreshed = .now
+            // Update all and Cleanup all are busy with the same repositories.
+            guard bulkActivity == nil else { continue }
+            await forEach(bulkRepos.filter { !$0.loadingPRs }) { await self.refreshPRs($0) }
+        }
+    }
+
+    /// Reloads a repository's pull requests. A failure is logged when it
+    /// starts, not on every reload the timer goes on to make.
     func refreshPRs(_ repo: RepoState) async {
         guard let github = repo.github else {
             repo.pullRequests = []
+            repo.mergedPullRequests = []
             repo.prError = nil
             return
         }
@@ -247,15 +285,24 @@ final class Workspace: Identifiable {
         do {
             var prs = try await PullRequests.open(in: github, cwd: repo.git.path)
             do {
-                prs = try await PullRequests.addingMergeQueue(to: prs, in: github, cwd: repo.git.path)
+                let extras = try await PullRequests.extras(in: github, cwd: repo.git.path)
+                prs = PullRequests.applying(queue: extras.queue, to: prs)
+                repo.mergedPullRequests = extras.merged
+                repo.extrasError = nil
             } catch {
-                append(repo.name, "merge queue: \(error.localizedDescription)", isError: true)
+                if repo.extrasError != error.localizedDescription {
+                    append(repo.name, error.localizedDescription, isError: true)
+                }
+                repo.extrasError = error.localizedDescription
             }
             repo.pullRequests = prs
+            repo.prsLoaded = true
             repo.prError = nil
         } catch {
+            if repo.prError != error.localizedDescription {
+                append(repo.name, "pull requests: \(error.localizedDescription)", isError: true)
+            }
             repo.prError = error.localizedDescription
-            append(repo.name, "pull requests: \(error.localizedDescription)", isError: true)
         }
     }
 

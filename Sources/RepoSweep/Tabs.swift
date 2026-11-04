@@ -3,11 +3,14 @@ import Observation
 import SwiftUI
 
 /// The open tabs, saved to user defaults whenever a tab is opened, closed,
-/// selected, or pointed at a different folder.
+/// selected, pointed at a different folder, or has Pinned only ticked or
+/// unticked.
 @MainActor @Observable
 final class Tabs {
     private static let tabsKey = "tabs"
     private static let selectedKey = "selectedTab"
+    /// Each tab's Pinned only checkbox, in the order of `tabsKey`.
+    private static let pinnedOnlyKey = "pinnedOnlyTabs"
     /// Where the single working directory was kept before there were tabs.
     private static let legacyRootKey = "workingDirectory"
 
@@ -25,11 +28,13 @@ final class Tabs {
         let paths = defaults.stringArray(forKey: Self.tabsKey)
             ?? defaults.string(forKey: Self.legacyRootKey).map { [$0] }
             ?? []
-        var workspaces = paths.map { path in
+        let pinnedOnly = defaults.array(forKey: Self.pinnedOnlyKey) as? [Bool] ?? []
+        var workspaces = paths.enumerated().map { index, path in
             // A folder that has since been moved or deleted reopens as a
             // clean tab rather than disappearing along with its position.
             Workspace(root: !path.isEmpty && FileManager.default.fileExists(atPath: path)
-                      ? URL(fileURLWithPath: path) : nil)
+                      ? URL(fileURLWithPath: path) : nil,
+                      pinnedOnly: pinnedOnly.indices.contains(index) && pinnedOnly[index])
         }
         if workspaces.isEmpty {
             workspaces = [Workspace()]
@@ -65,12 +70,13 @@ final class Tabs {
     }
 
     private func observe(_ workspace: Workspace) {
-        workspace.onRootChange = { [weak self] in self?.save() }
+        workspace.onSavedStateChange = { [weak self] in self?.save() }
     }
 
     private func save() {
         let defaults = UserDefaults.standard
         defaults.set(workspaces.map { $0.root?.path ?? "" }, forKey: Self.tabsKey)
+        defaults.set(workspaces.map(\.pinnedOnly), forKey: Self.pinnedOnlyKey)
         defaults.set(workspaces.firstIndex { $0.id == selectedID } ?? 0, forKey: Self.selectedKey)
     }
 }

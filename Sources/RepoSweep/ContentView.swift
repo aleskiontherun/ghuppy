@@ -55,6 +55,7 @@ struct WorkspaceView: View {
         }
         .task {
             if !model.scanned { await model.scan() }
+            await model.keepPRsFresh()
         }
     }
 
@@ -98,7 +99,7 @@ struct WorkspaceView: View {
 
             Toggle("Pinned only", isOn: pinnedOnly)
                 .toggleStyle(.checkbox)
-                .help("Update and clean up only the pinned repositories")
+                .help("Update, clean up and keep reloading pull requests for only the pinned repositories")
 
             Toggle("Dry run", isOn: dryRun)
                 .toggleStyle(.checkbox)

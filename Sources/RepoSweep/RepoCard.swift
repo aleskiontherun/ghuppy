@@ -116,32 +116,34 @@ struct RepoCard: View {
         .foregroundStyle(.secondary)
     }
 
-    @ViewBuilder
     private var pullRequests: some View {
-        if let error = repo.prError {
-            Label(error, systemImage: "exclamationmark.triangle")
+        VStack(alignment: .leading, spacing: 0) {
+            // A failed reload keeps the list it couldn't replace on screen.
+            if let error = repo.prError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+            } else if repo.pullRequests.isEmpty {
+                HStack(spacing: 6) {
+                    if repo.prsLoaded {
+                        Text("No open pull requests")
+                    } else {
+                        ProgressView().controlSize(.mini)
+                        Text("Loading pull requests…")
+                    }
+                }
                 .font(.callout)
-                .foregroundStyle(.red)
+                .foregroundStyle(.tertiary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
-        } else if repo.pullRequests.isEmpty {
-            HStack(spacing: 6) {
-                if repo.loadingPRs {
-                    ProgressView().controlSize(.mini)
-                    Text("Loading pull requests…")
-                } else {
-                    Text("No open pull requests")
-                }
             }
-            .font(.callout)
-            .foregroundStyle(.tertiary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-        } else {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(repo.pullRequests) { pr in
-                    PRRow(pr: pr)
-                }
+            ForEach(repo.pullRequests) { pr in
+                PRRow(pr: pr)
+            }
+            ForEach(repo.mergedPullRequests) { pr in
+                PRRow(pr: pr)
             }
         }
     }

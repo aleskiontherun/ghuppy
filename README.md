@@ -4,7 +4,8 @@
 
 A small macOS app for keeping a folder full of git checkouts tidy. Pick a
 working directory, and RepoSweep lists every repository under it, with a link
-to each one on GitHub and its open pull requests underneath.
+to each one on GitHub and its pull requests underneath: the open ones, then
+the ones in the merge queue, then the last 3 merged, the last merged first.
 
 - **Update** — `git fetch --prune`, then a fast-forward-only `git pull` of the
   checked-out branch, then reload the pull request list. It shows how many
@@ -26,14 +27,18 @@ anything under the working directory changes, and at most every few seconds
 while it keeps changing.
 Cleanup logs the space it freed: the size of each worktree it removed.
 
+The pull requests of the tab on screen are reloaded every two minutes, and
+straight away on coming back to a tab that has gone longer than that.
+
 A pull request in its base branch's merge queue shows its place in the queue
 (**Queued #1** is next to merge), in red once the queue finds it can't be
 merged.
 
 Pin a repository (the pin button, or right-click) to keep it at the top of
 the list. Pins are saved, and shared by every tab that lists the repository.
-Tick **Pinned only** to have Update all and Cleanup all act on the pinned
-repositories alone.
+Tick **Pinned only** to have Update all, Cleanup all and the two-minute pull
+request reload act on the pinned repositories alone. Each tab remembers its
+own checkbox, across launches too.
 
 ## What Cleanup deletes
 
