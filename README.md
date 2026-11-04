@@ -44,6 +44,12 @@ Tick **Pinned only** to have Update all, Cleanup all and the two-minute pull
 request reload act on the pinned repositories alone. Each tab remembers its
 own checkbox, across launches too.
 
+The **Author** select narrows the pull requests on screen to one person's,
+out of everyone with a pull request listed; every repository stays in the list.
+It only changes what is shown: Update all and Cleanup all act as before. Each
+tab remembers its own choice, across launches too, until its working directory
+changes.
+
 ## What Cleanup deletes
 
 A branch marked `[gone]` (its remote branch was deleted) is only a candidate:

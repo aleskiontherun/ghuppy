@@ -3,14 +3,16 @@ import Observation
 import SwiftUI
 
 /// The open tabs, saved to user defaults whenever a tab is opened, closed,
-/// selected, pointed at a different folder, or has Pinned only ticked or
-/// unticked.
+/// selected, pointed at a different folder, has Pinned only ticked or
+/// unticked, or has another author chosen.
 @MainActor @Observable
 final class Tabs {
     private static let tabsKey = "tabs"
     private static let selectedKey = "selectedTab"
     /// Each tab's Pinned only checkbox, in the order of `tabsKey`.
     private static let pinnedOnlyKey = "pinnedOnlyTabs"
+    /// Each tab's chosen author, in the order of `tabsKey`, empty for everyone.
+    private static let authorFilterKey = "authorFilterTabs"
     /// Where the single working directory was kept before there were tabs.
     private static let legacyRootKey = "workingDirectory"
 
@@ -29,12 +31,14 @@ final class Tabs {
             ?? defaults.string(forKey: Self.legacyRootKey).map { [$0] }
             ?? []
         let pinnedOnly = defaults.array(forKey: Self.pinnedOnlyKey) as? [Bool] ?? []
+        let authors = defaults.stringArray(forKey: Self.authorFilterKey) ?? []
         var workspaces = paths.enumerated().map { index, path in
             // A folder that has since been moved or deleted reopens as a
             // clean tab rather than disappearing along with its position.
             Workspace(root: !path.isEmpty && FileManager.default.fileExists(atPath: path)
                       ? URL(fileURLWithPath: path) : nil,
-                      pinnedOnly: pinnedOnly.indices.contains(index) && pinnedOnly[index])
+                      pinnedOnly: pinnedOnly.indices.contains(index) && pinnedOnly[index],
+                      authorFilter: authors.indices.contains(index) && !authors[index].isEmpty ? authors[index] : nil)
         }
         if workspaces.isEmpty {
             workspaces = [Workspace()]
@@ -77,6 +81,7 @@ final class Tabs {
         let defaults = UserDefaults.standard
         defaults.set(workspaces.map { $0.root?.path ?? "" }, forKey: Self.tabsKey)
         defaults.set(workspaces.map(\.pinnedOnly), forKey: Self.pinnedOnlyKey)
+        defaults.set(workspaces.map { $0.authorFilter ?? "" }, forKey: Self.authorFilterKey)
         defaults.set(workspaces.firstIndex { $0.id == selectedID } ?? 0, forKey: Self.selectedKey)
     }
 }

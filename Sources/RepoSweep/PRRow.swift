@@ -43,7 +43,7 @@ struct PRRow: View {
 
             Spacer(minLength: 8)
 
-            Text(pr.author.map { "\($0.login) · " } ?? "")
+            Text(pr.authorLogin.map { "\($0) · " } ?? "")
                 + Text(pr.mergedAt ?? pr.updatedAt, format: .relative(presentation: .named))
         }
         .font(.callout)

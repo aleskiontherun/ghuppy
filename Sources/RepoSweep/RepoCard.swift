@@ -117,7 +117,9 @@ struct RepoCard: View {
     }
 
     private var pullRequests: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let open = PullRequests.filter(repo.pullRequests, author: model.authorFilter)
+        let merged = PullRequests.filter(repo.mergedPullRequests, author: model.authorFilter)
+        return VStack(alignment: .leading, spacing: 0) {
             // A failed reload keeps the list it couldn't replace on screen.
             if let error = repo.prError {
                 Label(error, systemImage: "exclamationmark.triangle")
@@ -125,10 +127,10 @@ struct RepoCard: View {
                     .foregroundStyle(.red)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
-            } else if repo.pullRequests.isEmpty {
+            } else if open.isEmpty {
                 HStack(spacing: 6) {
                     if repo.prsLoaded {
-                        Text("No open pull requests")
+                        Text(model.authorFilter.map { "No open pull requests by \($0)" } ?? "No open pull requests")
                     } else {
                         ProgressView().controlSize(.mini)
                         Text("Loading pull requests…")
@@ -139,10 +141,10 @@ struct RepoCard: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
             }
-            ForEach(repo.pullRequests) { pr in
+            ForEach(open) { pr in
                 PRRow(pr: pr)
             }
-            ForEach(repo.mergedPullRequests) { pr in
+            ForEach(merged) { pr in
                 PRRow(pr: pr)
             }
         }
