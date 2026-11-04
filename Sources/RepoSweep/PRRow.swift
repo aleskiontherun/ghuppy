@@ -6,23 +6,6 @@ struct PRRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            checksIcon
-                .frame(width: 14)
-            Link(destination: pr.url) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("#\(pr.number)")
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                    Text(pr.title)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-            .help(pr.url.absoluteString)
-
-            Spacer(minLength: 8)
-
             HStack(spacing: 6) {
                 if pr.mergedAt != nil { Badge("Merged", color: .purple) }
                 if pr.mergedAt == nil {
@@ -43,6 +26,23 @@ struct PRRow: View {
                 case .none: EmptyView()
                 }
             }
+            checksIcon
+                .frame(width: 14)
+            Link(destination: pr.url) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("#\(pr.number)")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                    Text(pr.title)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .help(pr.url.absoluteString)
+
+            Spacer(minLength: 8)
+
             Text(pr.author.map { "\($0.login) · " } ?? "")
                 + Text(pr.mergedAt ?? pr.updatedAt, format: .relative(presentation: .named))
         }
@@ -94,7 +94,8 @@ private struct Badge: View {
         Text(text)
             .font(.caption.weight(.medium))
             .foregroundStyle(color)
-            .padding(.horizontal, 6)
+            .lineLimit(1)
+            .frame(width: 120)
             .padding(.vertical, 1)
             .background(color.opacity(0.15), in: Capsule())
     }
