@@ -30,8 +30,10 @@ Cleanup logs the space it freed: the size of each worktree it removed.
 The pull requests of the tab on screen are reloaded every two minutes, and
 straight away on coming back to a tab that has gone longer than that.
 
+Open pull requests are labelled **Open** (**Draft** for drafts).
+
 A pull request in its base branch's merge queue shows its place in the queue
-(**Queued #1** is next to merge), in red once the queue finds it can't be
+(**Queued #1** is next to merge, in dark yellow), in red once the queue finds it can't be
 merged.
 
 Pin a repository (the pin button, or right-click) to keep it at the top of

@@ -25,9 +25,11 @@ struct PRRow: View {
 
             HStack(spacing: 6) {
                 if pr.mergedAt != nil { Badge("Merged", color: .purple) }
-                if pr.isDraft { Badge("Draft", color: .gray) }
+                if pr.mergedAt == nil {
+                    if pr.isDraft { Badge("Draft", color: .gray) } else { Badge("Open", color: .green) }
+                }
                 if let entry = pr.mergeQueue {
-                    Badge("Queued #\(entry.position)", color: entry.isUnmergeable ? .red : .purple)
+                    Badge("Queued #\(entry.position)", color: entry.isUnmergeable ? .red : .darkYellow)
                         .help(entry.isUnmergeable
                             ? "In the merge queue, but it can't be merged"
                             : "In the merge queue, position \(entry.position)")
@@ -71,6 +73,11 @@ struct PRRow: View {
             Image(systemName: "circle.dashed").foregroundStyle(.tertiary).help("No checks")
         }
     }
+}
+
+private extension Color {
+    /// Yellow that stays readable on both light and dark backgrounds.
+    static let darkYellow = Color(red: 0.72, green: 0.53, blue: 0.04)
 }
 
 private struct Badge: View {
