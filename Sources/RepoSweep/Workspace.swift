@@ -25,6 +25,9 @@ final class RepoState: Identifiable {
     /// once they load again.
     var extrasError: String?
     var loadingPRs = false
+    /// Whether the open pull requests have loaded at least once, which tells
+    /// an empty list from one still to come. Later reloads stay out of sight.
+    var prsLoaded = false
     /// What the repository is doing right now, shown next to its name.
     var activity: String?
     /// The outcome of the last update or cleanup.
@@ -293,6 +296,7 @@ final class Workspace: Identifiable {
                 repo.extrasError = error.localizedDescription
             }
             repo.pullRequests = prs
+            repo.prsLoaded = true
             repo.prError = nil
         } catch {
             if repo.prError != error.localizedDescription {

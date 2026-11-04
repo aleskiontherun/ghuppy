@@ -127,11 +127,11 @@ struct RepoCard: View {
                     .padding(.vertical, 4)
             } else if repo.pullRequests.isEmpty {
                 HStack(spacing: 6) {
-                    if repo.loadingPRs {
+                    if repo.prsLoaded {
+                        Text("No open pull requests")
+                    } else {
                         ProgressView().controlSize(.mini)
                         Text("Loading pull requests…")
-                    } else {
-                        Text("No open pull requests")
                     }
                 }
                 .font(.callout)
