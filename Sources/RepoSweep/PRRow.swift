@@ -22,7 +22,7 @@ struct PRRow: View {
                 switch pr.review {
                 case .approved: Badge("Approved", color: .green)
                 case .changesRequested: Badge("Changes", color: .red)
-                case .required: Badge("Review required", color: .orange)
+                case .required: Badge("Review", color: .orange)
                 case .none: EmptyView()
                 }
             }
@@ -95,7 +95,7 @@ private struct Badge: View {
             .font(.caption.weight(.medium))
             .foregroundStyle(color)
             .lineLimit(1)
-            .frame(width: 120)
+            .frame(width: 76)
             .padding(.vertical, 1)
             .background(color.opacity(0.15), in: Capsule())
     }
