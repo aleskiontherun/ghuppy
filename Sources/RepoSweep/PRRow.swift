@@ -21,7 +21,7 @@ struct PRRow: View {
                 if pr.hasConflicts { Badge("Conflicts", color: .red) }
                 switch pr.review {
                 case .approved: Badge("Approved", color: .green)
-                case .changesRequested: Badge("Changes requested", color: .red)
+                case .changesRequested: Badge("Changes", color: .red)
                 case .required: Badge("Review required", color: .orange)
                 case .none: EmptyView()
                 }
