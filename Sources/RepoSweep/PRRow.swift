@@ -6,6 +6,26 @@ struct PRRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(spacing: 6) {
+                if pr.mergedAt != nil { Badge("Merged", color: .purple) }
+                if pr.mergedAt == nil {
+                    if pr.isDraft { Badge("Draft", color: .gray) }
+                    if pr.isReadyToMerge { Badge("Ready", color: .green) }
+                }
+                if let entry = pr.mergeQueue {
+                    Badge("Queued #\(entry.position)", color: entry.isUnmergeable ? .red : .darkYellow)
+                        .help(entry.isUnmergeable
+                            ? "In the merge queue, but it can't be merged"
+                            : "In the merge queue, position \(entry.position)")
+                }
+                if pr.hasConflicts { Badge("Conflicts", color: .red) }
+                switch pr.review {
+                case .approved: Badge("Approved", color: .green)
+                case .changesRequested: Badge("Changes", color: .red)
+                case .required: Badge("Review", color: .orange)
+                case .none: EmptyView()
+                }
+            }
             checksIcon
                 .frame(width: 14)
             Link(destination: pr.url) {
@@ -23,23 +43,6 @@ struct PRRow: View {
 
             Spacer(minLength: 8)
 
-            HStack(spacing: 6) {
-                if pr.mergedAt != nil { Badge("Merged", color: .purple) }
-                if pr.isDraft { Badge("Draft", color: .gray) }
-                if let entry = pr.mergeQueue {
-                    Badge("Queued #\(entry.position)", color: entry.isUnmergeable ? .red : .purple)
-                        .help(entry.isUnmergeable
-                            ? "In the merge queue, but it can't be merged"
-                            : "In the merge queue, position \(entry.position)")
-                }
-                if pr.hasConflicts { Badge("Conflicts", color: .red) }
-                switch pr.review {
-                case .approved: Badge("Approved", color: .green)
-                case .changesRequested: Badge("Changes requested", color: .red)
-                case .required: Badge("Review required", color: .orange)
-                case .none: EmptyView()
-                }
-            }
             Text(pr.author.map { "\($0.login) · " } ?? "")
                 + Text(pr.mergedAt ?? pr.updatedAt, format: .relative(presentation: .named))
         }
@@ -73,6 +76,11 @@ struct PRRow: View {
     }
 }
 
+private extension Color {
+    /// Yellow that stays readable on both light and dark backgrounds.
+    static let darkYellow = Color(red: 0.72, green: 0.53, blue: 0.04)
+}
+
 private struct Badge: View {
     let text: String
     let color: Color
@@ -86,7 +94,8 @@ private struct Badge: View {
         Text(text)
             .font(.caption.weight(.medium))
             .foregroundStyle(color)
-            .padding(.horizontal, 6)
+            .lineLimit(1)
+            .frame(width: 76)
             .padding(.vertical, 1)
             .background(color.opacity(0.15), in: Capsule())
     }

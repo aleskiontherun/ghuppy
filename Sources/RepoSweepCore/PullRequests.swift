@@ -74,6 +74,16 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
     }
 
     public var hasConflicts: Bool { mergeable == "CONFLICTING" }
+
+    /// Open, out of draft, not yet in the merge queue, and nothing in the way:
+    /// no conflicts, no failing or running checks, no review still wanted.
+    public var isReadyToMerge: Bool {
+        guard mergedAt == nil, !isDraft, mergeQueue == nil, !hasConflicts else { return false }
+        switch (checks, review) {
+        case (.passing, .approved), (.passing, .none), (.none, .approved), (.none, .none): return true
+        default: return false
+        }
+    }
 }
 
 extension PullRequest.Check {
