@@ -78,6 +78,14 @@ final class Workspace: Identifiable {
         didSet { onSavedStateChange?() }
     }
     var dryRun = false
+    /// The author whose pull requests are listed, nil for everyone's.
+    var authorFilter: String? {
+        didSet { onSavedStateChange?() }
+    }
+    /// Who the author select offers.
+    var authors: [String] {
+        PullRequests.authors(of: repos.flatMap { $0.pullRequests + $0.mergedPullRequests }, selected: authorFilter)
+    }
     /// The working directory's size on disk, nil until first measured.
     var directorySize: Int64?
     /// Free space on the working directory's volume.
@@ -104,9 +112,10 @@ final class Workspace: Identifiable {
         [("git", Shell.gitPath), ("gh", Shell.ghPath)].compactMap { $0.1 == nil ? $0.0 : nil }
     }
 
-    init(root: URL? = nil, pinnedOnly: Bool = false) {
+    init(root: URL? = nil, pinnedOnly: Bool = false, authorFilter: String? = nil) {
         self.root = root
         self.pinnedOnly = pinnedOnly
+        self.authorFilter = authorFilter
     }
 
     func chooseRoot() {
@@ -121,6 +130,7 @@ final class Workspace: Identifiable {
         guard url != root else { return }
         root = url
         repos = []
+        authorFilter = nil
         directorySize = nil
         freeSpace = nil
         Task { await scan() }

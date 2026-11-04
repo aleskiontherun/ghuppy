@@ -39,7 +39,7 @@ struct WorkspaceView: View {
         VStack(spacing: 0) {
             directoryBar
             Divider()
-            actionBar(pinnedOnly: $model.pinnedOnly, dryRun: $model.dryRun)
+            actionBar(pinnedOnly: $model.pinnedOnly, dryRun: $model.dryRun, author: $model.authorFilter)
             Divider()
             repositoryList
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -81,7 +81,7 @@ struct WorkspaceView: View {
         .padding(.vertical, 10)
     }
 
-    private func actionBar(pinnedOnly: Binding<Bool>, dryRun: Binding<Bool>) -> some View {
+    private func actionBar(pinnedOnly: Binding<Bool>, dryRun: Binding<Bool>, author: Binding<String?>) -> some View {
         HStack(spacing: 10) {
             Button {
                 Task { await model.updateAll() }
@@ -104,6 +104,15 @@ struct WorkspaceView: View {
             Toggle("Dry run", isOn: dryRun)
                 .toggleStyle(.checkbox)
                 .help("Report what cleanup would delete without deleting anything")
+
+            Picker("Author", selection: author) {
+                Text("Everyone").tag(String?.none)
+                ForEach(model.authors, id: \.self) { login in
+                    Text(login).tag(String?.some(login))
+                }
+            }
+            .fixedSize()
+            .help("Show only the pull requests of one author")
 
             Spacer()
 

@@ -172,3 +172,41 @@ import Testing
         #expect(PullRequests.applying(queue: [:], to: try prs([3, 2, 1])).map(\.number) == [3, 2, 1])
     }
 }
+
+@Suite struct AuthorFilter {
+    func prs(_ logins: [String?]) throws -> [PullRequest] {
+        try PullRequests.decode("[" + logins.enumerated().map { number, login in
+            """
+            {"number": \(number), "title": "PR", "url": "https://github.com/octo/hello/pull/\(number)",
+             "isDraft": false, "author": \(login.map { "{\"login\": \"\($0)\"}" } ?? "null"),
+             "headRefName": "branch", "updatedAt": "2026-10-29T12:00:00Z"}
+            """
+        }.joined(separator: ",") + "]")
+    }
+
+    @Test func aBotReadsTheSameFromGhAndGraphQL() throws {
+        #expect(try prs(["app/dependabot", "dependabot"]).map(\.authorLogin) == ["dependabot", "dependabot"])
+    }
+
+    @Test func noLoginIsNoAuthor() throws {
+        #expect(try prs([nil, ""]).map(\.authorLogin) == [nil, nil])
+    }
+
+    @Test func authorsAreUniqueAndAlphabetical() throws {
+        let prs = try prs(["zoe", "Bob", "app/alice", nil, "zoe", "alice"])
+        #expect(PullRequests.authors(of: prs) == ["alice", "Bob", "zoe"])
+    }
+
+    @Test func selectedAuthorStaysOnOfferWithNoPRsLeft() throws {
+        #expect(PullRequests.authors(of: try prs(["zoe"]), selected: "bob") == ["bob", "zoe"])
+        #expect(PullRequests.authors(of: try prs(["zoe"]), selected: "zoe") == ["zoe"])
+        #expect(PullRequests.authors(of: [], selected: "bob") == ["bob"])
+    }
+
+    @Test func filterKeepsTheOrder() throws {
+        let prs = try prs(["zoe", "bob", nil, "app/zoe"])
+        #expect(PullRequests.filter(prs, author: "zoe").map(\.number) == [0, 3])
+        #expect(PullRequests.filter(prs, author: nil).map(\.number) == [0, 1, 2, 3])
+        #expect(PullRequests.filter(prs, author: "nobody").isEmpty)
+    }
+}

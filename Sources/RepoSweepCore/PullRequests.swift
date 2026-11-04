@@ -42,6 +42,14 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
 
     public var id: Int { number }
 
+    /// Who opened the PR, nil when GitHub no longer knows. A bot reads the
+    /// same however the PR was loaded: `gh pr list` calls it `app/dependabot`
+    /// where GraphQL says `dependabot`.
+    public var authorLogin: String? {
+        guard let login = author?.login, !login.isEmpty else { return nil }
+        return login.hasPrefix("app/") ? String(login.dropFirst(4)) : login
+    }
+
     public enum Checks: Sendable {
         case none, passing, pending, failing
     }
@@ -211,6 +219,20 @@ public enum PullRequests {
         let queued = prs.filter { $0.mergeQueue != nil }
             .sorted { ($0.mergeQueue?.position ?? 0) < ($1.mergeQueue?.position ?? 0) }
         return prs.filter { $0.mergeQueue == nil } + queued
+    }
+
+    /// The authors of `prs` and `selected`, in alphabetical order. `selected`
+    /// is there for an author whose PRs have since gone from the list: a
+    /// select can't show a choice it doesn't offer.
+    public static func authors(of prs: [PullRequest], selected: String? = nil) -> [String] {
+        Set(prs.compactMap(\.authorLogin) + [selected].compactMap { $0 })
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    /// The PRs `author` opened, or all of them when `author` is nil.
+    public static func filter(_ prs: [PullRequest], author: String?) -> [PullRequest] {
+        guard let author else { return prs }
+        return prs.filter { $0.authorLogin == author }
     }
 
     public static func decode(_ json: String) throws -> [PullRequest] {
