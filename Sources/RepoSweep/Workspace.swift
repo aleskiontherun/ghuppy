@@ -21,6 +21,9 @@ final class RepoState: Identifiable {
     /// The latest merged pull requests, the last merged first.
     var mergedPullRequests: [PullRequest] = []
     var prError: String?
+    /// Why the merge queue and merged pull requests last failed to load, nil
+    /// once they load again.
+    var extrasError: String?
     var loadingPRs = false
     /// What the repository is doing right now, shown next to its name.
     var activity: String?
@@ -265,6 +268,8 @@ final class Workspace: Identifiable {
         }
     }
 
+    /// Reloads a repository's pull requests. A failure is logged when it
+    /// starts, not on every reload the timer goes on to make.
     func refreshPRs(_ repo: RepoState) async {
         guard let github = repo.github else {
             repo.pullRequests = []
@@ -280,13 +285,16 @@ final class Workspace: Identifiable {
                 let extras = try await PullRequests.extras(in: github, cwd: repo.git.path)
                 prs = PullRequests.applying(queue: extras.queue, to: prs)
                 repo.mergedPullRequests = extras.merged
+                repo.extrasError = nil
             } catch {
-                append(repo.name, error.localizedDescription, isError: true)
+                if repo.extrasError != error.localizedDescription {
+                    append(repo.name, error.localizedDescription, isError: true)
+                }
+                repo.extrasError = error.localizedDescription
             }
             repo.pullRequests = prs
             repo.prError = nil
         } catch {
-            // The timer would otherwise log the same outage on every reload.
             if repo.prError != error.localizedDescription {
                 append(repo.name, "pull requests: \(error.localizedDescription)", isError: true)
             }
