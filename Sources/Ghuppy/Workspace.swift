@@ -295,7 +295,7 @@ final class Workspace: Identifiable {
             var prs = try await PullRequests.open(in: github, cwd: repo.git.path)
             do {
                 let extras = try await PullRequests.extras(in: github, cwd: repo.git.path)
-                prs = PullRequests.applying(queue: extras.queue, to: prs)
+                prs = PullRequests.applying(queue: extras.queue, awaitingApproval: extras.awaitingApproval, to: prs)
                 repo.mergedPullRequests = extras.merged
                 repo.extrasError = nil
             } catch {
