@@ -1,7 +1,7 @@
 import Foundation
 
-/// Deletes local branches whose work has actually landed, and the worktrees
-/// stranded behind them.
+/// Deletes local branches whose work has actually landed and the worktrees
+/// stranded behind them, then pulls the default branch.
 ///
 /// `[gone]` only means the remote branch was deleted -- not that it was
 /// merged: it could have been abandoned, or be mid-flight in a stacked PR.
@@ -18,17 +18,33 @@ import Foundation
 /// is in `<base>` as well -- and never while a PR for it is open.
 ///
 /// When the branch to delete is the one checked out in the main checkout,
-/// the checkout is first switched to an up-to-date `<base>` -- provided it
-/// has no local changes, which the switch could clobber.
+/// the checkout is first switched to `<base>` -- provided it has no local
+/// changes, which the switch could clobber.
+///
+/// The pull comes last, and only ever into `<base>`: a checkout that ends up
+/// on `<base>` is fast-forwarded to `origin/<base>`, and one left on a kept
+/// branch stays exactly where it is.
 ///
 /// Nothing is removed with `--force`: a worktree with uncommitted work, or a
 /// locked one, is kept and named in the log, and so is its branch.
 ///
-/// `run` returns the space freed on disk: the size of each worktree it
-/// removed. Deleting a branch frees next to nothing until git collects its
-/// objects, so branches aren't counted.
+/// `run` returns what it pulled and the space freed on disk: the size of each
+/// worktree it removed. Deleting a branch frees next to nothing until git
+/// collects its objects, so branches aren't counted.
 public struct Cleanup: Sendable {
     public typealias PRLookup = @Sendable (_ branch: String) async throws -> PullRequests.BranchState
+
+    /// What a run did.
+    public struct Outcome: Sendable {
+        /// How many commits the pull brought into `<base>`.
+        public var pulled = 0
+        /// The space freed on disk.
+        public var freed: Int64 = 0
+        /// Why `<base>` couldn't be fast-forwarded. Handed back rather than
+        /// thrown: the rest of the run is done by then, and what it freed
+        /// still counts.
+        public var pullFailure: ShellError?
+    }
 
     let repo: GitRepo
     let dryRun: Bool
@@ -48,7 +64,7 @@ public struct Cleanup: Sendable {
     }
 
     @discardableResult
-    public func run(log: Logger) async throws -> Int64 {
+    public func run(log: Logger) async throws -> Outcome {
         try await repo.fetchPrune(log: log)
         let prune = await repo.git(dryRun ? ["worktree", "prune", "-n", "-v"] : ["worktree", "prune", "-v"])
         for line in (prune.stdout + prune.stderr).split(separator: "\n") {
@@ -60,8 +76,11 @@ public struct Cleanup: Sendable {
             ? "origin/\(base)" : base
         let trees = try await linkedWorktrees()
 
-        let freed = try await cleanBranches(base: base, baseRef: baseRef, trees: trees, log: log)
-        return freed + (await cleanDetachedWorktrees(baseRef: baseRef, trees: trees, log: log))
+        let branches = try await cleanBranches(base: base, baseRef: baseRef, trees: trees, log: log)
+        let freed = branches.freed + (await cleanDetachedWorktrees(baseRef: baseRef, trees: trees, log: log))
+        var outcome = await pull(base: base, baseRef: baseRef, checkout: branches.checkout, log: log)
+        outcome.freed = freed
+        return outcome
     }
 
     // MARK: Branches
@@ -144,8 +163,11 @@ public struct Cleanup: Sendable {
         return await repo.git("cherry", baseRef, squashed.out).out.hasPrefix("-")
     }
 
-    /// Returns the space freed by the worktrees removed with their branches.
-    func cleanBranches(base: String, baseRef: String, trees: [Worktree], log: Logger) async throws -> Int64 {
+    /// Returns the space freed by the worktrees removed with their branches,
+    /// and the branch the checkout is left on, nil when it's detached. A dry
+    /// run answers with the branch a real run would leave it on.
+    func cleanBranches(base: String, baseRef: String, trees: [Worktree],
+                       log: Logger) async throws -> (freed: Int64, checkout: String?) {
         var candidates = try await goneBranches(excluding: base)
         if candidates.isEmpty { await log("no [gone] branches") }
         let current = await repo.currentBranch()
@@ -156,6 +178,7 @@ public struct Cleanup: Sendable {
                                   uniquingKeysWith: { first, _ in first })
 
         var freed: Int64 = 0
+        var checkout = current
         for branch in candidates {
             let verdict = branch == liveCurrent
                 ? await checkedOutVerdict(for: branch, baseRef: baseRef, log: log)
@@ -166,11 +189,12 @@ public struct Cleanup: Sendable {
             }
             let checkedOut = branch == current
             await log("\(branch): delete (\(reason))\(checkedOut ? ", checked out here" : "")\(dryRun ? " [dry run]" : "")")
-            if dryRun { continue }
 
             if checkedOut {
                 guard try await switchToBase(base, from: branch, log: log) else { continue }
+                checkout = base
             }
+            if dryRun { continue }
             if let tree = attached[branch] {
                 guard let size = await remove(tree, reason: "branch deleted", log: log) else {
                     // git won't drop a branch a worktree still has checked out.
@@ -182,25 +206,68 @@ public struct Cleanup: Sendable {
             try await repo.gitChecked("branch", "-D", branch)
             await log("  deleted \(branch)")
         }
-        return freed
+        return (freed, checkout)
     }
 
-    /// Leaves `branch` for an up-to-date `base`, the way `git-main` does.
-    /// Fast-forward only: unlike a hard reset, it can't drop local commits on
-    /// base that were never pushed.
+    /// Leaves `branch` for `base`, the way `git-main` does. Returns false, and
+    /// stays put, when the checkout has local changes; a dry run only looks
+    /// for those.
     func switchToBase(_ base: String, from branch: String, log: Logger) async throws -> Bool {
         if await repo.isDirty() {
             await log("  \(branch) kept: the checkout has local changes, commit or stash them first")
             return false
         }
+        if dryRun { return true }
         try await repo.gitChecked("switch", base)
         await log("  switched to \(base)")
-        if await repo.git("rev-parse", "--verify", "--quiet", "refs/remotes/origin/\(base)").ok {
-            let merge = await repo.git("merge", "--ff-only", "origin/\(base)")
-            await log(merge.ok ? "  updated \(base) to origin/\(base)"
-                               : "  ! \(base) can't fast-forward to origin/\(base): \(merge.err)")
-        }
         return true
+    }
+
+    // MARK: Pull
+
+    /// Fast-forwards `base` to `origin/<base>`, which `run` has just fetched,
+    /// when `base` is what `checkout` is on. Any other branch is left alone,
+    /// however far behind its upstream: a kept branch is someone's work in
+    /// progress. Fast-forward only, so a pull never invents a merge commit or
+    /// drops local commits on `base` that were never pushed, in a repository
+    /// nobody is looking at.
+    func pull(base: String, baseRef: String, checkout: String?, log: Logger) async -> Outcome {
+        guard let checkout else {
+            await log("detached HEAD, nothing to pull")
+            return Outcome()
+        }
+        guard checkout == base else {
+            await log("\(checkout) is checked out, not \(base), nothing to pull")
+            return Outcome()
+        }
+        guard baseRef != base else {
+            await log("\(base) has no origin/\(base), nothing to pull")
+            return Outcome()
+        }
+
+        // A branch with no commits yet has nothing to count from.
+        let local = await repo.git("rev-parse", "--verify", "--quiet", "refs/heads/\(base)")
+        let range = local.ok ? "\(local.out)..\(baseRef)" : baseRef
+        let incoming = Int(await repo.git("rev-list", "--count", range).out) ?? 0
+        guard incoming > 0 else {
+            await log("\(base) is up to date")
+            return Outcome()
+        }
+        if dryRun {
+            // With commits of its own, `base` can't fast-forward: `incoming`
+            // only counts origin's side.
+            let canPull = local.ok ? (await repo.git("merge-base", "--is-ancestor", local.out, baseRef).ok) : true
+            await log(canPull ? "would pull \(GitRepo.commits(incoming)) into \(base) [dry run]"
+                              : "! \(base) can't fast-forward to \(baseRef) [dry run]")
+            return Outcome()
+        }
+
+        let merge = await repo.git("merge", "--ff-only", baseRef)
+        guard merge.ok else {
+            return Outcome(pullFailure: ShellError(message: "\(base) can't fast-forward to \(baseRef): \(merge.err)"))
+        }
+        await log("pulled \(GitRepo.commits(incoming)) into \(base)")
+        return Outcome(pulled: incoming)
     }
 
     // MARK: Worktrees
