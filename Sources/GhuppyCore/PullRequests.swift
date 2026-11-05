@@ -22,6 +22,10 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
     public let headRefName: String
     public let reviewDecision: String?
     public let mergeable: String?
+    /// GitHub's word on the merge button, which `mergeable` doesn't cover:
+    /// `CLEAN`, `HAS_HOOKS`, `UNSTABLE`, `BEHIND`, `BLOCKED`, `DIRTY`, `DRAFT`
+    /// or `UNKNOWN`. A merged PR has none.
+    public let mergeStateStatus: String?
     public let updatedAt: Date
     /// When the PR was merged, nil while it's open.
     public let mergedAt: Date?
@@ -90,14 +94,31 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
         }
     }
 
+    /// Whether any check is still going, even when `checks` has settled on a
+    /// failure or a wait for approval.
+    public var checksRunning: Bool {
+        statusCheckRollup?.contains { $0.result == .pending } ?? false
+    }
+
     public var hasConflicts: Bool { mergeable == "CONFLICTING" }
 
+    /// The base branch has moved on and its rules want the branch up to date
+    /// before it merges. The merge queue does that for a PR in it.
+    public var needsUpdate: Bool { mergeStateStatus == "BEHIND" && mergeQueue == nil }
+
+    /// Whether GitHub would merge the PR now. `UNSTABLE` is a merge it allows
+    /// despite a check that isn't required.
+    private var gitHubAllowsMerge: Bool {
+        ["CLEAN", "HAS_HOOKS", "UNSTABLE"].contains(mergeStateStatus)
+    }
+
     /// Open, out of draft, not yet in the merge queue, and nothing in the way:
-    /// no conflicts, no failing, running or unapproved checks, no review still
-    /// wanted. Not knowing about unapproved checks counts against it: a label
-    /// saying nothing is in the way has to know that.
+    /// GitHub allows the merge, with no conflicts, no failing, running or
+    /// unapproved checks, no review still wanted. Not knowing about the merge
+    /// or about unapproved checks counts against it: a label saying nothing is
+    /// in the way has to know that.
     public var isReadyToMerge: Bool {
-        guard mergedAt == nil, !isDraft, mergeQueue == nil, !hasConflicts,
+        guard mergedAt == nil, !isDraft, mergeQueue == nil, !hasConflicts, gitHubAllowsMerge,
               checksAwaitApproval == false else { return false }
         switch (checks, review) {
         case (.passing, .approved), (.passing, .none), (.none, .approved), (.none, .none): return true
@@ -126,7 +147,7 @@ extension PullRequest.Check {
 public enum PullRequests {
     static let fields = [
         "number", "title", "url", "isDraft", "author", "headRefName",
-        "reviewDecision", "mergeable", "updatedAt", "statusCheckRollup",
+        "reviewDecision", "mergeable", "mergeStateStatus", "updatedAt", "statusCheckRollup",
     ]
 
     /// Runs `gh`, at most a few at a time and retrying failures with backoff.
