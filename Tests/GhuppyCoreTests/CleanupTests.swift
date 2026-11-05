@@ -387,6 +387,9 @@ final class LogSink {
         let main = try await f.git("rev-parse", "main")
 
         let sink = await LogSink()
+        try await Cleanup(repo: f.repo, dryRun: true, lookup: { _ in .merged }).run(log: sink.logger)
+        #expect(await sink.lines.last == "! main can't fast-forward to origin/main [dry run]")
+
         let outcome = try await Cleanup(repo: f.repo, dryRun: false, lookup: { _ in .merged }).run(log: sink.logger)
 
         #expect(outcome.pulled == 0)

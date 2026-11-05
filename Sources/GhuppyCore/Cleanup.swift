@@ -254,7 +254,11 @@ public struct Cleanup: Sendable {
             return Outcome()
         }
         if dryRun {
-            await log("would pull \(GitRepo.commits(incoming)) into \(base) [dry run]")
+            // With commits of its own, `base` can't fast-forward: `incoming`
+            // only counts origin's side.
+            let canPull = local.ok ? (await repo.git("merge-base", "--is-ancestor", local.out, baseRef).ok) : true
+            await log(canPull ? "would pull \(GitRepo.commits(incoming)) into \(base) [dry run]"
+                              : "! \(base) can't fast-forward to \(baseRef) [dry run]")
             return Outcome()
         }
 
