@@ -22,11 +22,12 @@ last 3 merged, the last merged first.
 
 The status bar at the bottom shows how much space the working directory takes
 up on disk and how much is free on its volume, and each repository shows its
-own size. All of it is measured again after every scan and cleanup.
+own size, then how many linked worktrees, local branches and remote-tracking
+branches it has. All of it is measured again after every scan and cleanup.
 It also follows whatever else is writing to the disk: the free space is
 re-read every second, and the sizes are measured again a few seconds after
 anything under the working directory changes, and at most every few seconds
-while it keeps changing.
+while it keeps changing, and the worktrees and branches counted again with them.
 Cleanup logs the space it freed: the size of each worktree it removed.
 
 Drag the divider above the log to resize it. The height is saved, and shared

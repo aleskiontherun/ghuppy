@@ -290,6 +290,30 @@ final class LogSink {
         #expect(try await f.branches() == ["main", "dirty"])
     }
 
+    @Test func countsLinkedWorktreesAndBranches() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+
+        #expect(await f.repo.refCounts() == RefCounts(worktrees: 0, localBranches: 1, remoteBranches: 1))
+
+        try await f.branch("pushed", file: "pushed")
+        try await f.git("branch", "unpushed")
+        let tree = f.dir.appendingPathComponent("wt-kept")
+        let deleted = f.dir.appendingPathComponent("wt-deleted")
+        try await f.git("worktree", "add", "-q", tree.path, "unpushed")
+        try await f.git("worktree", "add", "-q", "--detach", deleted.path)
+        try FileManager.default.removeItem(at: deleted)
+
+        #expect(await f.repo.refCounts() == RefCounts(worktrees: 1, localBranches: 3, remoteBranches: 2))
+    }
+
+    @Test func hasNoCountsOutsideARepository() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+
+        #expect(await GitRepo(path: f.dir).refCounts() == nil)
+    }
+
     @Test func pullsTheDefaultBranch() async throws {
         let f = try await Fixture()
         defer { f.cleanUp() }
