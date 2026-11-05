@@ -5,10 +5,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 name=Ghuppy
-# Still the app's first name, RepoSweep: macOS files the saved settings (pins,
-# tabs, each tab's choices) under this identifier, so changing it would start
-# everyone over with none.
-bundle_id=me.vesnin.reposweep
+bundle_id=me.vesnin.ghuppy
 app="build/$name.app"
 version=$(git describe --tags --always 2>/dev/null || echo 0.1.0)
 
