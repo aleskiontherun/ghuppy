@@ -156,6 +156,69 @@ import Testing
     }
 }
 
+@Suite struct PullRequestLabel {
+    let passing = #"[{"__typename": "StatusContext", "state": "SUCCESS"}]"#
+    let running = #"[{"__typename": "CheckRun", "status": "IN_PROGRESS", "conclusion": ""}]"#
+    let failing = #"[{"__typename": "StatusContext", "state": "FAILURE"}]"#
+    let approved = #""APPROVED""#
+    let reviewRequired = #""REVIEW_REQUIRED""#
+    let changesRequested = #""CHANGES_REQUESTED""#
+    let entry = PullRequest.QueueEntry(position: 2, state: "QUEUED")
+
+    func label(
+        _ rollup: String = "[]", review: String = "null", mergeState: String = "BLOCKED",
+        mergeable: String = "MERGEABLE", draft: Bool = false, queued: Bool = false,
+        mergedAt: String = "null", awaitingApproval: Bool = false
+    ) throws -> PullRequest.Label? {
+        let json = """
+        [{"number": 7, "title": "t", "url": "https://github.com/octo/hello/pull/7",
+          "isDraft": \(draft), "author": null, "headRefName": "b",
+          "reviewDecision": \(review), "mergeable": "\(mergeable)", "mergeStateStatus": "\(mergeState)",
+          "updatedAt": "2026-10-29T12:00:00Z", "mergedAt": \(mergedAt), "statusCheckRollup": \(rollup)}]
+        """
+        return try #require(PullRequests.applying(
+            queue: queued ? [7: entry] : [:], awaitingApproval: awaitingApproval ? [7] : [],
+            to: PullRequests.decode(json)).first).label
+    }
+
+    @Test func anUpdateOutranksRunningChecks() throws {
+        #expect(try label(running, mergeState: "BEHIND") == .update)
+    }
+
+    /// Each line adds a condition to the ones before it, and the new one wins.
+    @Test func eachLabelOutranksTheOnesBelowIt() throws {
+        let merged = #""2026-10-30T12:00:00Z""#
+        #expect(try label(review: approved) == .approved)
+        #expect(try label(running, review: approved) == .checksRunning)
+        #expect(try label(running, review: reviewRequired) == .reviewRequired)
+        #expect(try label(running, review: reviewRequired, mergeState: "BEHIND") == .update)
+        #expect(try label(running, review: changesRequested, mergeState: "BEHIND") == .changesRequested)
+        #expect(try label(
+            running, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING") == .conflicts)
+        #expect(try label(
+            running, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
+            draft: true) == .draft)
+        #expect(try label(
+            running, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
+            draft: true, queued: true) == .queued(entry))
+        #expect(try label(
+            running, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
+            draft: true, queued: true, mergedAt: merged) == .merged)
+    }
+
+    @Test func readyOutranksApproved() throws {
+        #expect(try label(passing, review: approved, mergeState: "CLEAN") == .ready)
+        #expect(try label(passing, mergeState: "CLEAN") == .ready)
+    }
+
+    @Test func noLabelWhenNoneApplies() throws {
+        #expect(try label(failing) == nil)
+        #expect(try label(failing, mergeState: "UNSTABLE") == nil)
+        #expect(try label(awaitingApproval: true) == nil)
+        #expect(try label(mergeState: "UNKNOWN") == nil)
+    }
+}
+
 @Suite struct ExtrasDecoding {
     func merged(_ number: Int, at mergedAt: String, updated: String = "2026-11-01T00:00:00Z") -> String {
         """

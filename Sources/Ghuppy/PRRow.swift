@@ -6,33 +6,7 @@ struct PRRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            HStack(spacing: 6) {
-                if pr.mergedAt != nil { Badge("Merged", color: .purple) }
-                if pr.mergedAt == nil {
-                    if pr.isDraft { Badge("Draft", color: .gray) }
-                    if pr.isReadyToMerge { Badge("Ready", color: .green) }
-                }
-                if let entry = pr.mergeQueue {
-                    Badge("Queued #\(entry.position)", color: entry.isUnmergeable ? .red : .darkYellow)
-                        .help(entry.isUnmergeable
-                            ? "In the merge queue, but it can't be merged"
-                            : "In the merge queue, position \(entry.position)")
-                }
-                if pr.hasConflicts { Badge("Conflicts", color: .red) }
-                if pr.needsUpdate {
-                    Badge("Update", color: .orange)
-                        .help("Behind its base branch, and has to be brought up to date to merge")
-                }
-                switch pr.review {
-                case .approved: Badge("Approved", color: .green)
-                case .changesRequested: Badge("Changes", color: .red)
-                case .required: Badge("Review", color: .orange)
-                case .none: EmptyView()
-                }
-                if pr.checksRunning {
-                    Badge("CI", color: .darkYellow).help("Checks running")
-                }
-            }
+            badge
             checksIcon
                 .frame(width: 14)
             Link(destination: pr.url) {
@@ -57,6 +31,29 @@ struct PRRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
         .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private var badge: some View {
+        switch pr.label {
+        case .merged: Badge("Merged", color: .purple)
+        case .queued(let entry):
+            Badge("Queued #\(entry.position)", color: entry.isUnmergeable ? .red : .darkYellow)
+                .help(entry.isUnmergeable
+                    ? "In the merge queue, but it can't be merged"
+                    : "In the merge queue, position \(entry.position)")
+        case .draft: Badge("Draft", color: .gray)
+        case .conflicts: Badge("Conflicts", color: .red)
+        case .changesRequested: Badge("Changes", color: .red)
+        case .update:
+            Badge("Update", color: .orange)
+                .help("Behind its base branch, and has to be brought up to date to merge")
+        case .reviewRequired: Badge("Review", color: .orange)
+        case .checksRunning: Badge("CI", color: .darkYellow).help("Checks running")
+        case .ready: Badge("Ready", color: .green)
+        case .approved: Badge("Approved", color: .green)
+        case nil: EmptyView()
+        }
     }
 
     @ViewBuilder

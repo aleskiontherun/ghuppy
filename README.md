@@ -35,6 +35,11 @@ by every tab.
 The pull requests of the tab on screen are reloaded every two minutes, and
 straight away on coming back to a tab that has gone longer than that.
 
+A pull request shows one label, the first of these that applies: **Merged**,
+**Queued**, **Draft**, **Conflicts**, **Changes**, **Update**, **Review**,
+**CI**, **Ready**, **Approved**. One that fits none of them shows no label.
+The icon beside it shows how its checks are doing either way.
+
 Drafts are labelled **Draft**. A pull request that is ready to merge (out of
 draft, not queued, GitHub allowing the merge, no conflicts, checks passing or
 absent, no workflow waiting for approval, approved or needing no review) is
