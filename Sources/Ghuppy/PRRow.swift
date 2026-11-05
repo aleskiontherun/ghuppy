@@ -52,6 +52,9 @@ struct PRRow: View {
         case .checksRunning: Badge("CI", color: .darkYellow).help("Checks running")
         case .ready: Badge("Ready", color: .green)
         case .approved: Badge("Approved", color: .green)
+        case .blocked:
+            Badge("Blocked", color: .red)
+                .help("GitHub won't merge it, for a reason its checks don't show")
         case nil: EmptyView()
         }
     }
