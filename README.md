@@ -137,6 +137,10 @@ on `main`, and CI checks it is a conventional commit subject:
 also runs `swift test`, builds the app with `build-app.sh` and lints the
 scripts with ShellCheck; all of it has to pass before a PR can merge.
 
+A branch never needs to be current with `main`. A green PR goes into the merge
+queue, which squashes it onto `main` as it then stands, runs the required checks
+on that result and lands it. Rebase only to resolve a conflict.
+
 ## License
 
 MIT
