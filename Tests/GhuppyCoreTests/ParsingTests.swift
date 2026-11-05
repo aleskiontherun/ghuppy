@@ -228,11 +228,12 @@ import Testing
 }
 
 @Suite struct MergeQueueOrdering {
-    func prs(_ numbers: [Int]) throws -> [PullRequest] {
+    func prs(_ numbers: [Int], ready: Set<Int> = []) throws -> [PullRequest] {
         try PullRequests.decode("[" + numbers.map { number in
             """
             {"number": \(number), "title": "PR", "url": "https://github.com/octo/hello/pull/\(number)",
-             "isDraft": false, "headRefName": "branch", "updatedAt": "2026-10-29T12:00:00Z"}
+             "isDraft": false, "headRefName": "branch", "updatedAt": "2026-10-29T12:00:00Z",
+             "mergeStateStatus": \(ready.contains(number) ? #""CLEAN""# : "null")}
             """
         }.joined(separator: ",") + "]")
     }
@@ -245,6 +246,18 @@ import Testing
         ], awaitingApproval: [], to: try prs([5, 4, 3, 2, 1]))
         #expect(ordered.map(\.number) == [3, 1, 2, 5, 4])
         #expect(ordered.map(\.mergeQueue?.position) == [nil, nil, 1, 2, 3])
+    }
+
+    @Test func readyGoFirstKeepingTheirOrder() throws {
+        let ordered = PullRequests.applying(queue: [
+            4: .init(position: 1, state: "QUEUED"),
+        ], awaitingApproval: [], to: try prs([5, 4, 3, 2, 1], ready: [4, 3, 1]))
+        #expect(ordered.map(\.number) == [3, 1, 5, 2, 4])
+    }
+
+    @Test func aWorkflowWaitingForApprovalIsNotPutFirst() throws {
+        let ordered = PullRequests.applying(queue: [:], awaitingApproval: [1], to: try prs([2, 1], ready: [1]))
+        #expect(ordered.map(\.number) == [2, 1])
     }
 
     @Test func nothingQueuedKeepsTheOrder() throws {
