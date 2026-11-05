@@ -1,47 +1,80 @@
 {
-  "fill" : {
-    "solid" : "extended-srgb:0.41569,0.57647,0.85882,1.00000"
-  },
-  "groups" : [
-    {
-      "layers" : [
-        {
-          "glass" : true,
-          "image-name" : "lines.svg",
-          "name" : "lines"
-        }
-      ],
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+  "fill": {
+    "linear-gradient": [
+      "extended-srgb:0.90980,0.51765,0.24314,1.00000",
+      "extended-srgb:0.76078,0.35294,0.14118,1.00000"
+    ],
+    "orientation": {
+      "start": {
+        "x": 0.5,
+        "y": 0
       },
-      "specular" : true,
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.4
-      }
-    },
-    {
-      "layers" : [
-        {
-          "glass" : true,
-          "image-name" : "nodes.svg",
-          "name" : "nodes"
-        }
-      ],
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
-      },
-      "specular" : true,
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.4
+      "stop": {
+        "x": 0.5,
+        "y": 1
       }
     }
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "eye.svg",
+          "name": "eye"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "specular": true
+    },
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "over.svg",
+          "name": "over"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "specular": true
+    },
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "lines.svg",
+          "name": "lines"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "specular": true
+    },
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "trunk.svg",
+          "name": "trunk"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "specular": true
+    }
   ],
-  "supported-platforms" : {
-    "squares" : [
+  "supported-platforms": {
+    "squares": [
       "macOS"
     ]
   }
