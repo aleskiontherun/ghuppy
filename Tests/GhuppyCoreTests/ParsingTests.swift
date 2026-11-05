@@ -28,14 +28,15 @@ import Testing
 }
 
 @Suite struct PullRequestDecoding {
-    func pr(rollup: String, extra: String = "") throws -> PullRequest {
+    func pr(rollup: String, awaitingApproval: Bool = false, extra: String = "") throws -> PullRequest {
         let json = """
         [{"number": 7, "title": "Add thing", "url": "https://github.com/octo/hello/pull/7",
           "isDraft": false, "author": {"login": "octo"}, "headRefName": "feature/thing",
           "reviewDecision": "APPROVED", "mergeable": "CONFLICTING",
           "updatedAt": "2026-10-29T12:00:00Z", "statusCheckRollup": \(rollup) \(extra)}]
         """
-        return try #require(PullRequests.decode(json).first)
+        return try #require(PullRequests.applying(
+            queue: [:], awaitingApproval: awaitingApproval ? [7] : [], to: PullRequests.decode(json)).first)
     }
 
     @Test func fields() throws {
@@ -49,14 +50,18 @@ import Testing
     }
 
     @Test func readyToMerge() throws {
-        func ready(_ rollup: String, review: String, mergeable: String = "MERGEABLE", draft: Bool = false) throws -> Bool {
+        func ready(
+            _ rollup: String, review: String, mergeable: String = "MERGEABLE",
+            mergeState: String = #""CLEAN""#, draft: Bool = false, awaitingApproval: Set<Int> = []
+        ) throws -> Bool {
             let json = """
             [{"number": 7, "title": "t", "url": "https://github.com/octo/hello/pull/7",
               "isDraft": \(draft), "author": null, "headRefName": "b",
-              "reviewDecision": \(review), "mergeable": "\(mergeable)",
+              "reviewDecision": \(review), "mergeable": "\(mergeable)", "mergeStateStatus": \(mergeState),
               "updatedAt": "2026-10-29T12:00:00Z", "statusCheckRollup": \(rollup)}]
             """
-            return try #require(PullRequests.decode(json).first).isReadyToMerge
+            return try #require(PullRequests.applying(
+                queue: [:], awaitingApproval: awaitingApproval, to: PullRequests.decode(json)).first).isReadyToMerge
         }
         let ok = #"[{"__typename": "StatusContext", "state": "SUCCESS"}]"#
         let running = #"[{"__typename": "CheckRun", "status": "IN_PROGRESS", "conclusion": ""}]"#
@@ -67,6 +72,47 @@ import Testing
         #expect(try !ready(running, review: #""APPROVED""#))
         #expect(try !ready(ok, review: #""APPROVED""#, mergeable: "CONFLICTING"))
         #expect(try !ready(ok, review: #""APPROVED""#, draft: true))
+        #expect(try !ready(ok, review: #""APPROVED""#, awaitingApproval: [7]))
+        #expect(try !ready("[]", review: "null", awaitingApproval: [7]))
+        #expect(try ready(ok, review: #""APPROVED""#, mergeState: #""HAS_HOOKS""#))
+        #expect(try ready(ok, review: #""APPROVED""#, mergeState: #""UNSTABLE""#))
+        #expect(try !ready(ok, review: #""APPROVED""#, mergeState: #""BEHIND""#))
+        #expect(try !ready(ok, review: #""APPROVED""#, mergeState: #""BLOCKED""#))
+        #expect(try !ready(ok, review: #""APPROVED""#, mergeState: #""UNKNOWN""#))
+        #expect(try !ready(ok, review: #""APPROVED""#, mergeState: "null"))
+    }
+
+    @Test func aBranchBehindItsBaseNeedsAnUpdateUntilItIsQueued() throws {
+        let behind = try pr(rollup: "[]", extra: #", "mergeStateStatus": "BEHIND""#)
+        #expect(behind.needsUpdate)
+        #expect(try !pr(rollup: "[]", extra: #", "mergeStateStatus": "CLEAN""#).needsUpdate)
+        #expect(try !pr(rollup: "[]").needsUpdate)
+        let queued = try #require(PullRequests.applying(
+            queue: [7: .init(position: 1, state: "QUEUED")], awaitingApproval: [], to: [behind]).first)
+        #expect(!queued.needsUpdate)
+    }
+
+    @Test func checksRunningSeesPastAFailureAndAnApprovalWait() throws {
+        let running = #"{"__typename": "CheckRun", "status": "IN_PROGRESS", "conclusion": ""}"#
+        let passed = #"{"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "SUCCESS"}"#
+        let failed = #"{"__typename": "StatusContext", "state": "FAILURE"}"#
+        #expect(try pr(rollup: "[\(passed), \(running)]").checksRunning)
+        #expect(try pr(rollup: "[\(failed), \(running)]").checksRunning)
+        #expect(try pr(rollup: "[\(running)]", awaitingApproval: true).checksRunning)
+        #expect(try !pr(rollup: "[\(passed), \(failed)]").checksRunning)
+        #expect(try !pr(rollup: "[]").checksRunning)
+    }
+
+    @Test func notReadyWithoutTheApprovalLookup() throws {
+        let json = """
+        [{"number": 7, "title": "t", "url": "https://github.com/octo/hello/pull/7",
+          "isDraft": false, "author": null, "headRefName": "b",
+          "reviewDecision": "APPROVED", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
+          "updatedAt": "2026-10-29T12:00:00Z", "statusCheckRollup": []}]
+        """
+        let pr = try #require(PullRequests.decode(json).first)
+        #expect(!pr.isReadyToMerge)
+        #expect(pr.checks == .none)
     }
 
     @Test func passing() throws {
@@ -93,6 +139,21 @@ import Testing
         """)
         #expect(pr.checks == .failing)
     }
+
+    @Test func aDeploymentWaitingForApprovalIsPending() throws {
+        let pr = try pr(rollup: #"[{"__typename": "CheckRun", "status": "WAITING", "conclusion": ""}]"#)
+        #expect(pr.checks == .pending)
+    }
+
+    @Test func aWorkflowAwaitingApprovalOutranksEverythingButAFailure() throws {
+        let passing = #"[{"__typename": "StatusContext", "state": "SUCCESS"}]"#
+        let running = #"[{"__typename": "CheckRun", "status": "IN_PROGRESS", "conclusion": ""}]"#
+        let failing = #"[{"__typename": "StatusContext", "state": "FAILURE"}]"#
+        #expect(try pr(rollup: "[]", awaitingApproval: true).checks == .awaitingApproval)
+        #expect(try pr(rollup: passing, awaitingApproval: true).checks == .awaitingApproval)
+        #expect(try pr(rollup: running, awaitingApproval: true).checks == .awaitingApproval)
+        #expect(try pr(rollup: failing, awaitingApproval: true).checks == .failing)
+    }
 }
 
 @Suite struct ExtrasDecoding {
@@ -104,6 +165,13 @@ import Testing
         """
     }
 
+    func open(_ number: Int, queue: String = "null", suites: String = "[]") -> String {
+        """
+        {"number": \(number), "mergeQueueEntry": \(queue),
+         "commits": {"nodes": [{"commit": {"checkSuites": {"nodes": \(suites)}}}]}}
+        """
+    }
+
     func extras(open: String = "", merged: [String] = []) throws -> PullRequests.Extras {
         try PullRequests.decodeExtras("""
         {"open": {"nodes": [\(open)]}, "merged": {"nodes": [\(merged.joined(separator: ","))]}}
@@ -111,16 +179,27 @@ import Testing
     }
 
     @Test func queueEntriesByNumber() throws {
-        let entries = try extras(open: """
-        {"number": 7, "mergeQueueEntry": {"position": 2, "state": "AWAITING_CHECKS"}},
-        {"number": 8, "mergeQueueEntry": null},
-        {"number": 9, "mergeQueueEntry": {"position": 1, "state": "UNMERGEABLE"}}
-        """).queue
+        let entries = try extras(open: [
+            open(7, queue: #"{"position": 2, "state": "AWAITING_CHECKS"}"#),
+            open(8),
+            open(9, queue: #"{"position": 1, "state": "UNMERGEABLE"}"#),
+        ].joined(separator: ",")).queue
         #expect(entries.count == 2)
         #expect(entries[7] == PullRequest.QueueEntry(position: 2, state: "AWAITING_CHECKS"))
         #expect(entries[8] == nil)
         #expect(entries[9]?.isUnmergeable == true)
         #expect(entries[7]?.isUnmergeable == false)
+    }
+
+    @Test func awaitingApprovalIsASuiteThatConcludedActionRequired() throws {
+        let awaiting = try extras(open: [
+            open(7, suites: #"[{"conclusion": "SUCCESS"}, {"conclusion": "ACTION_REQUIRED"}]"#),
+            open(8, suites: #"[{"conclusion": "SUCCESS"}, {"conclusion": null}]"#),
+            open(9),
+            #"{"number": 10, "mergeQueueEntry": null, "commits": {"nodes": [{"commit": {"checkSuites": null}}]}}"#,
+            #"{"number": 11, "mergeQueueEntry": null, "commits": {"nodes": []}}"#,
+        ].joined(separator: ",")).awaitingApproval
+        #expect(awaiting == [7])
     }
 
     @Test func mergedAreTheLastThreeByMergeTimeNotUpdateTime() throws {
@@ -163,13 +242,13 @@ import Testing
             5: .init(position: 2, state: "QUEUED"),
             4: .init(position: 3, state: "QUEUED"),
             2: .init(position: 1, state: "AWAITING_CHECKS"),
-        ], to: try prs([5, 4, 3, 2, 1]))
+        ], awaitingApproval: [], to: try prs([5, 4, 3, 2, 1]))
         #expect(ordered.map(\.number) == [3, 1, 2, 5, 4])
         #expect(ordered.map(\.mergeQueue?.position) == [nil, nil, 1, 2, 3])
     }
 
     @Test func nothingQueuedKeepsTheOrder() throws {
-        #expect(PullRequests.applying(queue: [:], to: try prs([3, 2, 1])).map(\.number) == [3, 2, 1])
+        #expect(PullRequests.applying(queue: [:], awaitingApproval: [], to: try prs([3, 2, 1])).map(\.number) == [3, 2, 1])
     }
 }
 

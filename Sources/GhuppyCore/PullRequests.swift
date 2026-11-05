@@ -22,14 +22,24 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
     public let headRefName: String
     public let reviewDecision: String?
     public let mergeable: String?
+    /// GitHub's word on the merge button, which `mergeable` doesn't cover:
+    /// `CLEAN`, `HAS_HOOKS`, `UNSTABLE`, `BEHIND`, `BLOCKED`, `DIRTY`, `DRAFT`
+    /// or `UNKNOWN`. A merged PR has none.
+    public let mergeStateStatus: String?
     public let updatedAt: Date
     /// When the PR was merged, nil while it's open.
     public let mergedAt: Date?
     public let statusCheckRollup: [Check]?
     /// The PR's place in its base branch's merge queue, nil when it isn't
-    /// in one. `gh pr list` has no field for it, so `applying(queue:to:)`
-    /// fills it in.
+    /// in one. `gh pr list` has no field for it, so
+    /// `applying(queue:awaitingApproval:to:)` fills it in.
     public internal(set) var mergeQueue: QueueEntry?
+    /// Whether a workflow on the PR's latest commit is waiting for someone to
+    /// approve its run, as a first-time contributor's is. Such a run has no
+    /// check runs yet, so `statusCheckRollup` leaves it out, and can even
+    /// read as all passing. nil until `applying(queue:awaitingApproval:to:)`
+    /// fills it in, and so when that lookup failed.
+    public internal(set) var checksAwaitApproval: Bool?
 
     public struct QueueEntry: Sendable, Decodable, Equatable {
         /// 1 is the next to merge.
@@ -51,12 +61,13 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
     }
 
     public enum Checks: Sendable {
-        case none, passing, pending, failing
+        case none, passing, pending, awaitingApproval, failing
     }
 
+    /// A failure comes first. Then a wait for approval, ahead of running
+    /// checks: those finish on their own, and it doesn't.
     public var checks: Checks {
         let rollup = statusCheckRollup ?? []
-        guard !rollup.isEmpty else { return .none }
         var pending = false
         for check in rollup {
             switch check.result {
@@ -65,6 +76,8 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
             default: break
             }
         }
+        if checksAwaitApproval == true { return .awaitingApproval }
+        guard !rollup.isEmpty else { return .none }
         return pending ? .pending : .passing
     }
 
@@ -81,12 +94,32 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
         }
     }
 
+    /// Whether any check is still going, even when `checks` has settled on a
+    /// failure or a wait for approval.
+    public var checksRunning: Bool {
+        statusCheckRollup?.contains { $0.result == .pending } ?? false
+    }
+
     public var hasConflicts: Bool { mergeable == "CONFLICTING" }
 
+    /// The base branch has moved on and its rules want the branch up to date
+    /// before it merges. The merge queue does that for a PR in it.
+    public var needsUpdate: Bool { mergeStateStatus == "BEHIND" && mergeQueue == nil }
+
+    /// Whether GitHub would merge the PR now. `UNSTABLE` is a merge it allows
+    /// despite a check that isn't required.
+    private var gitHubAllowsMerge: Bool {
+        ["CLEAN", "HAS_HOOKS", "UNSTABLE"].contains(mergeStateStatus)
+    }
+
     /// Open, out of draft, not yet in the merge queue, and nothing in the way:
-    /// no conflicts, no failing or running checks, no review still wanted.
+    /// GitHub allows the merge, with no conflicts, no failing, running or
+    /// unapproved checks, no review still wanted. Not knowing about the merge
+    /// or about unapproved checks counts against it: a label saying nothing is
+    /// in the way has to know that.
     public var isReadyToMerge: Bool {
-        guard mergedAt == nil, !isDraft, mergeQueue == nil, !hasConflicts else { return false }
+        guard mergedAt == nil, !isDraft, mergeQueue == nil, !hasConflicts, gitHubAllowsMerge,
+              checksAwaitApproval == false else { return false }
         switch (checks, review) {
         case (.passing, .approved), (.passing, .none), (.none, .approved), (.none, .none): return true
         default: return false
@@ -114,7 +147,7 @@ extension PullRequest.Check {
 public enum PullRequests {
     static let fields = [
         "number", "title", "url", "isDraft", "author", "headRefName",
-        "reviewDecision", "mergeable", "updatedAt", "statusCheckRollup",
+        "reviewDecision", "mergeable", "mergeStateStatus", "updatedAt", "statusCheckRollup",
     ]
 
     /// Runs `gh`, at most a few at a time and retrying failures with backoff.
@@ -151,6 +184,8 @@ public enum PullRequests {
     public struct Extras: Sendable, Equatable {
         /// The merge queue entries of the open PRs, by PR number.
         public let queue: [Int: PullRequest.QueueEntry]
+        /// The numbers of the open PRs with a workflow waiting for approval.
+        public let awaitingApproval: Set<Int>
         /// The last merged first.
         public let merged: [PullRequest]
     }
@@ -171,7 +206,11 @@ public enum PullRequests {
         query($owner: String!, $name: String!) {
           repository(owner: $owner, name: $name) {
             open: pullRequests(states: OPEN, first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
-              nodes { number mergeQueueEntry { position state } }
+              nodes {
+                number
+                mergeQueueEntry { position state }
+                commits(last: 1) { nodes { commit { checkSuites(first: 100) { nodes { conclusion } } } } }
+              }
             }
             merged: pullRequests(states: MERGED, first: \(mergedSearched), orderBy: {field: UPDATED_AT, direction: DESC}) {
               nodes { number title url isDraft author { login } headRefName updatedAt mergedAt }
@@ -184,7 +223,7 @@ public enum PullRequests {
             "--jq", ".data.repository",
         ], cwd: cwd)
         guard result.ok else {
-            throw ShellError(message: "merge queue and merged pull requests lookup failed: \(result.err)")
+            throw ShellError(message: "merge queue, workflow approval and merged pull requests lookup failed: \(result.err)")
         }
         return try decodeExtras(result.stdout)
     }
@@ -193,9 +232,27 @@ public enum PullRequests {
         struct Connection<Node: Decodable>: Decodable {
             let nodes: [Node]
         }
+        struct Suite: Decodable {
+            let conclusion: String?
+        }
+        struct Commit: Decodable {
+            let checkSuites: Connection<Suite>?
+        }
+        struct CommitNode: Decodable {
+            let commit: Commit
+        }
         struct OpenNode: Decodable {
             let number: Int
             let mergeQueueEntry: PullRequest.QueueEntry?
+            let commits: Connection<CommitNode>
+
+            /// A workflow waiting for approval is a suite that has already
+            /// completed, with this conclusion and no check runs.
+            var awaitsApproval: Bool {
+                commits.nodes.contains { node in
+                    node.commit.checkSuites?.nodes.contains { $0.conclusion == "ACTION_REQUIRED" } ?? false
+                }
+            }
         }
         struct Response: Decodable {
             let open: Connection<OpenNode>
@@ -205,16 +262,20 @@ public enum PullRequests {
         let queue = Dictionary(
             response.open.nodes.compactMap { node in node.mergeQueueEntry.map { (node.number, $0) } },
             uniquingKeysWith: { first, _ in first })
+        let awaitingApproval = Set(response.open.nodes.filter(\.awaitsApproval).map(\.number))
         let merged = response.merged.nodes.sorted { ($0.mergedAt ?? .distantPast) > ($1.mergedAt ?? .distantPast) }
-        return Extras(queue: queue, merged: Array(merged.prefix(mergedShown)))
+        return Extras(queue: queue, awaitingApproval: awaitingApproval, merged: Array(merged.prefix(mergedShown)))
     }
 
-    /// `prs` with their merge queue entries filled in, and the queued ones
-    /// moved to the end, the next to merge first.
-    public static func applying(queue: [Int: PullRequest.QueueEntry], to prs: [PullRequest]) -> [PullRequest] {
+    /// `prs` with their merge queue entries and workflow approvals filled in,
+    /// and the queued ones moved to the end, the next to merge first.
+    public static func applying(
+        queue: [Int: PullRequest.QueueEntry], awaitingApproval: Set<Int>, to prs: [PullRequest]
+    ) -> [PullRequest] {
         var prs = prs
         for index in prs.indices {
             prs[index].mergeQueue = queue[prs[index].number]
+            prs[index].checksAwaitApproval = awaitingApproval.contains(prs[index].number)
         }
         let queued = prs.filter { $0.mergeQueue != nil }
             .sorted { ($0.mergeQueue?.position ?? 0) < ($1.mergeQueue?.position ?? 0) }

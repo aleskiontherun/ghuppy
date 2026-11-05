@@ -19,11 +19,18 @@ struct PRRow: View {
                             : "In the merge queue, position \(entry.position)")
                 }
                 if pr.hasConflicts { Badge("Conflicts", color: .red) }
+                if pr.needsUpdate {
+                    Badge("Update", color: .orange)
+                        .help("Behind its base branch, and has to be brought up to date to merge")
+                }
                 switch pr.review {
                 case .approved: Badge("Approved", color: .green)
                 case .changesRequested: Badge("Changes", color: .red)
                 case .required: Badge("Review", color: .orange)
                 case .none: EmptyView()
+                }
+                if pr.checksRunning {
+                    Badge("CI", color: .darkYellow).help("Checks running")
                 }
             }
             checksIcon
@@ -70,6 +77,8 @@ struct PRRow: View {
             Image(systemName: "xmark.circle.fill").foregroundStyle(.red).help("Checks failing")
         case .pending:
             Image(systemName: "clock.fill").foregroundStyle(.orange).help("Checks running")
+        case .awaitingApproval:
+            Image(systemName: "clock.fill").foregroundStyle(.orange).help("Checks waiting for approval")
         case .none:
             Image(systemName: "circle.dashed").foregroundStyle(.tertiary).help("No checks")
         }
