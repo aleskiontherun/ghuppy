@@ -156,41 +156,6 @@ public struct GitRepo: Sendable, Hashable {
         }
     }
 
-    /// `git fetch --prune`, then a fast-forward-only pull of the checked-out
-    /// branch. Fast-forward only, so an update never invents a merge commit
-    /// or stops halfway through a rebase in a repository nobody is looking at.
-    /// Returns the number of commits the pull brought in.
-    @discardableResult
-    public func update(log: Logger) async throws -> Int {
-        try await fetchPrune(log: log)
-        await log("fetched")
-
-        guard let branch = await currentBranch() else {
-            await log("detached HEAD, nothing to pull")
-            return 0
-        }
-        let upstream = await git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-        guard upstream.ok else {
-            await log("\(branch) has no upstream, nothing to pull")
-            return 0
-        }
-        guard await git("rev-parse", "--verify", "--quiet", "@{u}").ok else {
-            await log("\(branch): upstream \(upstream.out) is gone, nothing to pull")
-            return 0
-        }
-
-        // A branch with no commits yet has no HEAD to count from.
-        let before = await git("rev-parse", "--verify", "--quiet", "HEAD")
-        let pull = await git("pull", "--ff-only")
-        guard pull.ok else {
-            throw ShellError(message: "pull \(branch) failed: \(pull.err)")
-        }
-        let range = before.ok ? "\(before.out)..HEAD" : "HEAD"
-        let pulled = Int(await git("rev-list", "--count", range).out) ?? 0
-        await log(pulled == 0 ? "\(branch) is up to date" : "pulled \(Self.commits(pulled)) into \(branch)")
-        return pulled
-    }
-
     /// "1 commit", "3 commits".
     public static func commits(_ count: Int) -> String {
         "\(count) commit\(count == 1 ? "" : "s")"

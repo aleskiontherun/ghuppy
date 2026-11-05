@@ -30,7 +30,7 @@ final class RepoState: Identifiable {
     var prsLoaded = false
     /// What the repository is doing right now, shown next to its name.
     var activity: String?
-    /// The outcome of the last update or cleanup.
+    /// The outcome of the last cleanup.
     var result: (text: String, isError: Bool)?
     /// The repository's size on disk, nil until first measured.
     var size: Int64?
@@ -61,8 +61,7 @@ final class Workspace: Identifiable {
         let pins = Pins.shared
         return repos.filter { pins.isPinned($0.git.path) } + repos.filter { !pins.isPinned($0.git.path) }
     }
-    /// The repositories Update all, Cleanup all and the timed pull request
-    /// reload act on.
+    /// The repositories Cleanup all and the timed pull request reload act on.
     private var bulkRepos: [RepoState] {
         pinnedOnly ? orderedRepos.filter { Pins.shared.isPinned($0.git.path) } : orderedRepos
     }
@@ -72,8 +71,8 @@ final class Workspace: Identifiable {
     /// doesn't rescan it.
     var scanned = false
     var bulkActivity: String?
-    /// Whether Update all, Cleanup all and the timed pull request reload act
-    /// on the pinned repositories only.
+    /// Whether Cleanup all and the timed pull request reload act on the
+    /// pinned repositories only.
     var pinnedOnly: Bool {
         didSet { onSavedStateChange?() }
     }
@@ -93,8 +92,8 @@ final class Workspace: Identifiable {
     var measuringSize = false
     /// What the Cleanup all running now has freed so far.
     @ObservationIgnored private var freedByCleanupAll: Int64 = 0
-    /// How many commits the Update all running now has pulled so far.
-    @ObservationIgnored private var pulledByUpdateAll = 0
+    /// How many commits the Cleanup all running now has pulled so far.
+    @ObservationIgnored private var pulledByCleanupAll = 0
     @ObservationIgnored private var measurement: Task<Void, Never>?
     /// Tells when something under the working directory changed.
     @ObservationIgnored private var watcher: (root: URL, watcher: DirectoryWatcher)?
@@ -275,7 +274,7 @@ final class Workspace: Identifiable {
             try? await Task.sleep(for: .seconds(max(wait, 0)))
             guard !Task.isCancelled else { return }
             prsRefreshed = .now
-            // Update all and Cleanup all are busy with the same repositories.
+            // Cleanup all is busy with the same repositories.
             guard bulkActivity == nil else { continue }
             await forEach(bulkRepos.filter { !$0.loadingPRs }) { await self.refreshPRs($0) }
         }
@@ -318,56 +317,43 @@ final class Workspace: Identifiable {
 
     // MARK: Actions
 
-    func updateAll() async {
+    func cleanupAll() async {
         guard bulkActivity == nil else { return }
-        bulkActivity = "Updating…"
+        bulkActivity = dryRun ? "Cleaning up (dry run)…" : "Cleaning up…"
         defer { bulkActivity = nil }
         // Let a discovery already in flight (the first one, on opening the
         // tab) finish, then look again so the list is current.
         while scanning {
             try? await Task.sleep(for: .milliseconds(100))
         }
-        pulledByUpdateAll = 0
-        await discover()
-        await forEach(bulkRepos) { await self.update($0) }
-        append(nil, "Update all finished, pulled \(GitRepo.commits(pulledByUpdateAll))")
-        measureDisk()
-    }
-
-    func cleanupAll() async {
-        guard bulkActivity == nil else { return }
-        bulkActivity = dryRun ? "Cleaning up (dry run)…" : "Cleaning up…"
-        defer { bulkActivity = nil }
         freedByCleanupAll = 0
+        pulledByCleanupAll = 0
+        await discover()
         await forEach(bulkRepos) { await self.cleanup($0) }
-        append(nil, dryRun ? "Cleanup all finished (dry run, nothing deleted)"
-                           : "Cleanup all finished, freed \(Self.bytes(freedByCleanupAll))")
+        append(nil, dryRun ? "Cleanup all finished (dry run, nothing deleted or pulled)"
+                           : "Cleanup all finished, pulled \(GitRepo.commits(pulledByCleanupAll)), "
+                               + "freed \(Self.bytes(freedByCleanupAll))")
         measureDisk()
-    }
-
-    func update(_ repo: RepoState) async {
-        await perform("Updating…", on: repo) {
-            let pulled = try await repo.git.update(log: self.logger(for: repo))
-            self.pulledByUpdateAll += pulled
-            return pulled == 0 ? "Up to date" : "Pulled \(GitRepo.commits(pulled))"
-        }
-        await refreshPRs(repo)
-        // A bulk action measures once, when it's done. The whole working
-        // directory is walked again rather than just this repository: its
-        // nested repositories and removed worktrees count elsewhere.
-        if bulkActivity == nil { measureDisk() }
     }
 
     func cleanup(_ repo: RepoState) async {
         let dryRun = dryRun
         await perform(dryRun ? "Cleaning up (dry run)…" : "Cleaning up…", on: repo) {
-            let freed = try await Cleanup(repo: repo.git, dryRun: dryRun).run(log: self.logger(for: repo))
+            let outcome = try await Cleanup(repo: repo.git, dryRun: dryRun).run(log: self.logger(for: repo))
             if dryRun { return "Cleanup dry run done" }
-            self.freedByCleanupAll += freed
+            self.pulledByCleanupAll += outcome.pulled
+            self.freedByCleanupAll += outcome.freed
+            let freed = Self.bytes(outcome.freed)
             // Cleanup all sums them up, so only the repositories that freed something get a line.
-            if freed > 0 || self.bulkActivity == nil { self.append(repo.name, "freed \(Self.bytes(freed))") }
-            return "Cleaned up, freed \(Self.bytes(freed))"
+            if outcome.freed > 0 || self.bulkActivity == nil { self.append(repo.name, "freed \(freed)") }
+            if let failure = outcome.pullFailure { throw failure }
+            return outcome.pulled == 0 ? "Cleaned up, freed \(freed)"
+                                       : "Cleaned up, pulled \(GitRepo.commits(outcome.pulled)), freed \(freed)"
         }
+        await refreshPRs(repo)
+        // A bulk action measures once, when it's done. The whole working
+        // directory is walked again rather than just this repository: its
+        // nested repositories and removed worktrees count elsewhere.
         if bulkActivity == nil { measureDisk() }
     }
 
