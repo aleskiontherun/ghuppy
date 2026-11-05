@@ -1,6 +1,6 @@
 import AppKit
 import Observation
-import RepoSweepCore
+import GhuppyCore
 
 struct LogLine: Identifiable {
     let id = UUID()
@@ -191,7 +191,7 @@ final class Workspace: Identifiable {
         }.map { (root, $0) }
     }
 
-    /// Something under the working directory changed, by RepoSweep's own
+    /// Something under the working directory changed, by Ghuppy's own
     /// git or by anything else. Walking the tree again is far dearer than
     /// reading the free space, so the sizes are measured again after the
     /// changes settle, and then at most every few seconds however busy the
@@ -214,7 +214,7 @@ final class Workspace: Identifiable {
 
     /// Re-reads the free space beside the working directory, for the status
     /// bar to call on a timer: files created or deleted by anything on the
-    /// machine change it, not only by RepoSweep. It writes only when the
+    /// machine change it, not only by Ghuppy. It writes only when the
     /// figure moved, so an idle volume doesn't redraw the bar.
     func refreshFreeSpace() {
         guard let root, let free = DiskUsage.freeSpace(at: root), free != freeSpace else { return }

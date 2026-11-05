@@ -2,12 +2,12 @@ import AppKit
 import SwiftUI
 
 @main
-struct RepoSweepApp: App {
+struct GhuppyApp: App {
     @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
     @State private var tabs = Tabs()
 
     var body: some Scene {
-        Window("RepoSweep", id: "main") {
+        Window("Ghuppy", id: "main") {
             ContentView()
                 .environment(tabs)
                 .frame(minWidth: 640, minHeight: 480)

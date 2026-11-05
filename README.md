@@ -1,9 +1,9 @@
-# RepoSweep
+# Ghuppy
 
 <img src="Resources/AppIcon.png" width="128" alt="">
 
 A small macOS app for keeping a folder full of git checkouts tidy. Pick a
-working directory, and RepoSweep lists every repository under it, with a link
+working directory, and Ghuppy lists every repository under it, with a link
 to each one on GitHub and its pull requests underneath: the open ones, then
 the ones in the merge queue, then the last 3 merged, the last merged first.
 
@@ -53,7 +53,7 @@ changes.
 ## What Cleanup deletes
 
 A branch marked `[gone]` (its remote branch was deleted) is only a candidate:
-that alone doesn't mean it was merged. For each candidate RepoSweep asks
+that alone doesn't mean it was merged. For each candidate Ghuppy asks
 GitHub (`gh pr list --head <branch>`):
 
 | PR for the branch | Result |
@@ -69,7 +69,7 @@ default branch holds an equal squashed patch, or holds its commits and its PR
 is merged: a branch just cut from the default branch is in it too. A branch
 with an open PR is kept.
 
-If the branch to delete is the one checked out, RepoSweep switches the
+If the branch to delete is the one checked out, Ghuppy switches the
 checkout to the default branch, fast-forwards it to `origin`, then deletes the
 branch, but only when there are no local changes.
 
@@ -105,7 +105,7 @@ handles them.
 ## Build
 
 ```bash
-./scripts/build-app.sh            # builds build/RepoSweep.app
+./scripts/build-app.sh            # builds build/Ghuppy.app
 ./scripts/build-app.sh --install  # and copies it to /Applications
 ```
 
@@ -118,7 +118,7 @@ The app is ad-hoc signed and not notarized, so it's meant to be built
 locally. For development:
 
 ```bash
-swift run RepoSweep
+swift run Ghuppy
 swift test
 ```
 

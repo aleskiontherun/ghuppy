@@ -1,4 +1,4 @@
-import RepoSweepCore
+import GhuppyCore
 import SwiftUI
 
 /// The window: a tab bar when there is more than one tab, the selected
@@ -16,7 +16,7 @@ struct ContentView: View {
                 .environment(workspace)
                 .id(workspace.id)
         }
-        .navigationTitle(workspace.root.map { "RepoSweep — \($0.lastPathComponent)" } ?? "RepoSweep")
+        .navigationTitle(workspace.root.map { "Ghuppy — \($0.lastPathComponent)" } ?? "Ghuppy")
         .toolbar {
             ToolbarItem {
                 Button {
@@ -182,13 +182,13 @@ struct WorkspaceView: View {
             ContentUnavailableView(
                 "Missing \(model.missingTools.joined(separator: " and "))",
                 systemImage: "exclamationmark.triangle",
-                description: Text("Install it (for example with Homebrew) and relaunch RepoSweep.")
+                description: Text("Install it (for example with Homebrew) and relaunch Ghuppy.")
             )
         } else if model.root == nil {
             ContentUnavailableView {
                 Label("Select a working directory", systemImage: "folder.badge.questionmark")
             } description: {
-                Text("RepoSweep lists every git repository under it.")
+                Text("Ghuppy lists every git repository under it.")
             } actions: {
                 Button("Select…") { model.chooseRoot() }
             }

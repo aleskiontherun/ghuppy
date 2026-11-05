@@ -1,5 +1,5 @@
 import AppKit
-import RepoSweepCore
+import GhuppyCore
 import SwiftUI
 
 struct RepoCard: View {

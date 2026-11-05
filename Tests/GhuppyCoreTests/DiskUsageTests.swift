@@ -1,11 +1,11 @@
 import Foundation
 import Testing
-@testable import RepoSweepCore
+@testable import GhuppyCore
 
 struct DiskUsageTests {
     @Test func countsNestedAndHiddenFilesButNotSymlinkTargets() throws {
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("repo-sweep-disk-\(UUID().uuidString)")
+            .appendingPathComponent("ghuppy-disk-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let nested = dir.appendingPathComponent("a/.hidden")
         try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
@@ -17,7 +17,7 @@ struct DiskUsageTests {
 
         // A link to a big file elsewhere adds nothing.
         let outside = FileManager.default.temporaryDirectory
-            .appendingPathComponent("repo-sweep-disk-target-\(UUID().uuidString)")
+            .appendingPathComponent("ghuppy-disk-target-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: outside) }
         try Data(repeating: 2, count: 1_000_000).write(to: outside)
         try FileManager.default.createSymbolicLink(at: dir.appendingPathComponent("link"), withDestinationURL: outside)
@@ -26,7 +26,7 @@ struct DiskUsageTests {
 
     @Test func splitsTheTotalByNearestSubdirectory() throws {
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("repo-sweep-disk-split-\(UUID().uuidString)")
+            .appendingPathComponent("ghuppy-disk-split-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let a = dir.appendingPathComponent("a"), b = dir.appendingPathComponent("group/b")
         let empty = dir.appendingPathComponent("empty")
@@ -54,7 +54,7 @@ struct DiskUsageTests {
     @Test func rereadsFreeSpaceThroughTheSameURL() throws {
         let dir = FileManager.default.temporaryDirectory
         let before = try #require(DiskUsage.freeSpace(at: dir))
-        let blob = dir.appendingPathComponent("repo-sweep-free-\(UUID().uuidString)")
+        let blob = dir.appendingPathComponent("ghuppy-free-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: blob) }
         try Data(count: 300_000_000).write(to: blob)
         #expect(try #require(DiskUsage.freeSpace(at: dir)) < before - 150_000_000)
