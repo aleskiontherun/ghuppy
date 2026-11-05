@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- Lines stop at the rim of each node (r=84): the nodes are translucent
-       glass, and a line running under one would show through it. -->
-  <g transform="translate(24 0)" fill="none" stroke="#FFFFFF" stroke-width="64" stroke-linecap="butt">
-    <path d="M392 378 V646"/>
-    <path d="M392 646 C392 540 632 572 632 466"/>
+  <g transform="translate(512 512) scale(0.74) translate(-501 -512)">
+    <!-- One line, out and back over itself: Liquid Glass closes an open path, which would draw an edge between its two ends.
+         The bottom node is in this layer so that the line and the node are one shape. -->
+    <path fill="none" stroke="#DDD9D2" stroke-width="88" stroke-linejoin="bevel" d="M222.1 337.1 C278.1 395.3 316.4 468.4 360 512 C450 602 560 662 680 662 C805 662 908 594 908 512 C908 430 805 362 680 362 C560 362 450 422 360 512 C300 572 250 688 150 744 C250 688 300 572 360 512 C450 422 560 362 680 362 C805 362 908 430 908 512 C908 594 805 662 680 662 C560 662 450 602 360 512 C316.4 468.4 278.1 395.3 222.1 337.1 Z"/>
+    <circle cx="150" cy="744" r="100" fill="#DDD9D2"/>
   </g>
 </svg>
