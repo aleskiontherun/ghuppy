@@ -27,8 +27,8 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
     public let mergedAt: Date?
     public let statusCheckRollup: [Check]?
     /// The PR's place in its base branch's merge queue, nil when it isn't
-    /// in one. `gh pr list` has no field for it, so `applying(queue:to:)`
-    /// fills it in.
+    /// in one. `gh pr list` has no field for it, so
+    /// `applying(queue:awaitingApproval:to:)` fills it in.
     public internal(set) var mergeQueue: QueueEntry?
     /// Whether a workflow on the PR's latest commit is waiting for someone to
     /// approve its run, as a first-time contributor's is. Such a run has no
