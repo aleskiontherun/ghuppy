@@ -86,14 +86,11 @@ struct RepoCard: View {
                     .help(result.text)
                     .frame(maxWidth: 260, alignment: .trailing)
             }
-            Group {
-                Button("Update") { Task { await model.update(repo) } }
-                    .help("Fetch with prune, pull, and reload pull requests")
-                Button("Cleanup") { Task { await model.cleanup(repo) } }
-                    .help(model.dryRun ? "Report merged branches without deleting them"
-                                       : "Delete local branches that were merged")
-            }
-            .disabled(repo.activity != nil)
+            Button("Cleanup") { Task { await model.cleanup(repo) } }
+                .help(model.dryRun ? "Report what cleanup would delete and pull without doing it"
+                                   : "Fetch with prune, delete local branches that were merged, "
+                                       + "pull the default branch, and reload pull requests")
+                .disabled(repo.activity != nil)
             pinButton
         }
     }
