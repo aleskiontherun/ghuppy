@@ -51,13 +51,13 @@ import Testing
 
     @Test func readyToMerge() throws {
         func ready(
-            _ rollup: String, review: String, mergeable: String = "MERGEABLE", draft: Bool = false,
-            awaitingApproval: Set<Int> = []
+            _ rollup: String, review: String, mergeable: String = "MERGEABLE",
+            mergeState: String = #""CLEAN""#, draft: Bool = false, awaitingApproval: Set<Int> = []
         ) throws -> Bool {
             let json = """
             [{"number": 7, "title": "t", "url": "https://github.com/octo/hello/pull/7",
               "isDraft": \(draft), "author": null, "headRefName": "b",
-              "reviewDecision": \(review), "mergeable": "\(mergeable)",
+              "reviewDecision": \(review), "mergeable": "\(mergeable)", "mergeStateStatus": \(mergeState),
               "updatedAt": "2026-10-29T12:00:00Z", "statusCheckRollup": \(rollup)}]
             """
             return try #require(PullRequests.applying(
@@ -74,13 +74,40 @@ import Testing
         #expect(try !ready(ok, review: #""APPROVED""#, draft: true))
         #expect(try !ready(ok, review: #""APPROVED""#, awaitingApproval: [7]))
         #expect(try !ready("[]", review: "null", awaitingApproval: [7]))
+        #expect(try ready(ok, review: #""APPROVED""#, mergeState: #""HAS_HOOKS""#))
+        #expect(try ready(ok, review: #""APPROVED""#, mergeState: #""UNSTABLE""#))
+        #expect(try !ready(ok, review: #""APPROVED""#, mergeState: #""BEHIND""#))
+        #expect(try !ready(ok, review: #""APPROVED""#, mergeState: #""BLOCKED""#))
+        #expect(try !ready(ok, review: #""APPROVED""#, mergeState: #""UNKNOWN""#))
+        #expect(try !ready(ok, review: #""APPROVED""#, mergeState: "null"))
+    }
+
+    @Test func aBranchBehindItsBaseNeedsAnUpdateUntilItIsQueued() throws {
+        let behind = try pr(rollup: "[]", extra: #", "mergeStateStatus": "BEHIND""#)
+        #expect(behind.needsUpdate)
+        #expect(try !pr(rollup: "[]", extra: #", "mergeStateStatus": "CLEAN""#).needsUpdate)
+        #expect(try !pr(rollup: "[]").needsUpdate)
+        let queued = try #require(PullRequests.applying(
+            queue: [7: .init(position: 1, state: "QUEUED")], awaitingApproval: [], to: [behind]).first)
+        #expect(!queued.needsUpdate)
+    }
+
+    @Test func checksRunningSeesPastAFailureAndAnApprovalWait() throws {
+        let running = #"{"__typename": "CheckRun", "status": "IN_PROGRESS", "conclusion": ""}"#
+        let passed = #"{"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "SUCCESS"}"#
+        let failed = #"{"__typename": "StatusContext", "state": "FAILURE"}"#
+        #expect(try pr(rollup: "[\(passed), \(running)]").checksRunning)
+        #expect(try pr(rollup: "[\(failed), \(running)]").checksRunning)
+        #expect(try pr(rollup: "[\(running)]", awaitingApproval: true).checksRunning)
+        #expect(try !pr(rollup: "[\(passed), \(failed)]").checksRunning)
+        #expect(try !pr(rollup: "[]").checksRunning)
     }
 
     @Test func notReadyWithoutTheApprovalLookup() throws {
         let json = """
         [{"number": 7, "title": "t", "url": "https://github.com/octo/hello/pull/7",
           "isDraft": false, "author": null, "headRefName": "b",
-          "reviewDecision": "APPROVED", "mergeable": "MERGEABLE",
+          "reviewDecision": "APPROVED", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
           "updatedAt": "2026-10-29T12:00:00Z", "statusCheckRollup": []}]
         """
         let pr = try #require(PullRequests.decode(json).first)

@@ -19,11 +19,18 @@ struct PRRow: View {
                             : "In the merge queue, position \(entry.position)")
                 }
                 if pr.hasConflicts { Badge("Conflicts", color: .red) }
+                if pr.needsUpdate {
+                    Badge("Update", color: .orange)
+                        .help("Behind its base branch, and has to be brought up to date to merge")
+                }
                 switch pr.review {
                 case .approved: Badge("Approved", color: .green)
                 case .changesRequested: Badge("Changes", color: .red)
                 case .required: Badge("Review", color: .orange)
                 case .none: EmptyView()
+                }
+                if pr.checksRunning {
+                    Badge("CI", color: .darkYellow).help("Checks running")
                 }
             }
             checksIcon
