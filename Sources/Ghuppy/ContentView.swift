@@ -32,6 +32,7 @@ struct ContentView: View {
 
 struct WorkspaceView: View {
     @Environment(Workspace.self) private var model
+    @AppStorage("logHeight") private var logHeight = 180.0
     let showLog: Bool
 
     var body: some View {
@@ -41,12 +42,17 @@ struct WorkspaceView: View {
             Divider()
             actionBar(pinnedOnly: $model.pinnedOnly, dryRun: $model.dryRun, author: $model.authorFilter)
             Divider()
-            repositoryList
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if showLog {
-                Divider()
-                LogPane()
-                    .frame(height: 180)
+            GeometryReader { proxy in
+                let heights = LogPane.heights(sharing: proxy.size.height)
+                VStack(spacing: 0) {
+                    repositoryList
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if showLog {
+                        LogResizeHandle(height: $logHeight, range: heights)
+                        LogPane()
+                            .frame(height: logHeight.clamped(to: heights))
+                    }
+                }
             }
             if model.root != nil {
                 Divider()
