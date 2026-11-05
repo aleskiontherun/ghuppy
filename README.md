@@ -28,6 +28,9 @@ anything under the working directory changes, and at most every few seconds
 while it keeps changing.
 Cleanup logs the space it freed: the size of each worktree it removed.
 
+Drag the divider above the log to resize it. The height is saved, and shared
+by every tab.
+
 The pull requests of the tab on screen are reloaded every two minutes, and
 straight away on coming back to a tab that has gone longer than that.
 
