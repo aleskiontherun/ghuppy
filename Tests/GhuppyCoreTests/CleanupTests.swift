@@ -67,6 +67,18 @@ struct Fixture {
         try await git("push", "-q", "origin", "--delete", name)
     }
 
+    /// Someone else pushing a commit per file to `branch` of origin.
+    func pushElsewhere(_ files: String..., to branch: String = "main") async throws {
+        let other = dir.appendingPathComponent("elsewhere-\(UUID().uuidString)")
+        try await sh(dir, "clone", "-q", "-b", branch, origin.path, other.path)
+        for file in files {
+            try file.write(to: other.appendingPathComponent(file), atomically: true, encoding: .utf8)
+            try await sh(other, "add", file)
+            try await sh(other, "-c", "user.email=t@e.com", "-c", "user.name=T", "commit", "-q", "-m", file)
+        }
+        try await sh(other, "push", "-q", "origin", branch)
+    }
+
     func branches() async throws -> Set<String> {
         Set(try await git("for-each-ref", "refs/heads", "--format=%(refname:short)").split(separator: "\n").map(String.init))
     }
@@ -76,6 +88,7 @@ struct Fixture {
 final class LogSink {
     var lines: [String] = []
     var logger: Logger { { [weak self] in self?.lines.append($0) } }
+    func clear() { lines.removeAll() }
 }
 
 @Suite(.serialized) struct CleanupTests {
@@ -136,11 +149,12 @@ final class LogSink {
 
         try await f.git("switch", "-q", "feature")
         let sink = await LogSink()
-        try await Cleanup(repo: f.repo, dryRun: false, lookup: { _ in .merged }).run(log: sink.logger)
+        let outcome = try await Cleanup(repo: f.repo, dryRun: false, lookup: { _ in .merged }).run(log: sink.logger)
 
         #expect(try await f.git("branch", "--show-current") == "main")
         #expect(try await f.branches() == ["main"])
         #expect(try await f.git("rev-parse", "main") == (try await f.git("rev-parse", "origin/main")))
+        #expect(outcome.pulled == 1)
     }
 
     @Test func leavesMergedCheckedOutBranchWhoseRemoteBranchIsStillThere() async throws {
@@ -234,14 +248,22 @@ final class LogSink {
 
         try await f.branch("feature", file: "feature")
         try await f.deleteRemote("feature")
+        try await f.pushElsewhere("new")
         try await f.git("switch", "-q", "feature")
         try "wip".write(to: f.clone.appendingPathComponent("wip"), atomically: true, encoding: .utf8)
+        let main = try await f.git("rev-parse", "main")
 
-        let sink = await LogSink()
-        try await Cleanup(repo: f.repo, dryRun: false, lookup: { _ in .merged }).run(log: sink.logger)
+        for dryRun in [true, false] {
+            let sink = await LogSink()
+            let outcome = try await Cleanup(repo: f.repo, dryRun: dryRun, lookup: { _ in .merged }).run(log: sink.logger)
 
-        #expect(try await f.git("branch", "--show-current") == "feature")
-        #expect(try await f.branches().contains("feature"))
+            #expect(try await f.git("branch", "--show-current") == "feature")
+            #expect(try await f.branches().contains("feature"))
+            #expect(try await f.git("rev-parse", "main") == main)
+            #expect(outcome.pulled == 0)
+            #expect(await sink.lines.contains("  feature kept: the checkout has local changes, commit or stash them first"))
+            #expect(await sink.lines.last == "feature is checked out, not main, nothing to pull")
+        }
     }
 
     @Test func removesCleanWorktreeOfMergedBranchButNotDirtyOne() async throws {
@@ -260,35 +282,117 @@ final class LogSink {
         let cleanSize = try #require(DiskUsage.allocatedSize(of: cleanTree))
 
         let sink = await LogSink()
-        let freed = try await Cleanup(repo: f.repo, dryRun: false, lookup: { _ in .merged }).run(log: sink.logger)
+        let outcome = try await Cleanup(repo: f.repo, dryRun: false, lookup: { _ in .merged }).run(log: sink.logger)
 
-        #expect(freed == cleanSize)
+        #expect(outcome.freed == cleanSize)
         #expect(!FileManager.default.fileExists(atPath: cleanTree.path))
         #expect(FileManager.default.fileExists(atPath: dirtyTree.path))
         #expect(try await f.branches() == ["main", "dirty"])
     }
 
-    @Test func updatePullsFastForward() async throws {
+    @Test func pullsTheDefaultBranch() async throws {
         let f = try await Fixture()
         defer { f.cleanUp() }
 
-        let other = f.dir.appendingPathComponent("other")
-        try await f.sh(f.dir, "clone", "-q", f.origin.path, other.path)
-        for file in ["new", "newer"] {
-            try file.write(to: other.appendingPathComponent(file), atomically: true, encoding: .utf8)
-            try await f.sh(other, "add", file)
-            try await f.sh(other, "-c", "user.email=t@e.com", "-c", "user.name=T", "commit", "-q", "-m", file)
-        }
-        try await f.sh(other, "push", "-q", "origin", "main")
+        try await f.pushElsewhere("new", "newer")
 
         let sink = await LogSink()
-        #expect(try await f.repo.update(log: sink.logger) == 2)
+        let cleanup = Cleanup(repo: f.repo, dryRun: false, lookup: { _ in .none })
+        #expect(try await cleanup.run(log: sink.logger).pulled == 2)
         #expect(FileManager.default.fileExists(atPath: f.clone.appendingPathComponent("newer").path))
         #expect(await f.repo.status().behind == 0)
         #expect(await sink.lines.contains("pulled 2 commits into main"))
 
-        #expect(try await f.repo.update(log: sink.logger) == 0)
+        #expect(try await cleanup.run(log: sink.logger).pulled == 0)
         #expect(await sink.lines.last == "main is up to date")
+    }
+
+    /// Both the branch and main have moved on origin, and neither moves here:
+    /// the only thing ever pulled is main, and only with main checked out.
+    @Test func doesNotPullWithAKeptBranchCheckedOut() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+
+        try await f.branch("feature", file: "feature")
+        try await f.git("switch", "-q", "feature")
+        try await f.pushElsewhere("theirs", to: "feature")
+        try await f.pushElsewhere("new")
+        let head = try await f.git("rev-parse", "HEAD")
+        let main = try await f.git("rev-parse", "main")
+
+        let sink = await LogSink()
+        let outcome = try await Cleanup(repo: f.repo, dryRun: false, lookup: { _ in .open }).run(log: sink.logger)
+
+        #expect(outcome.pulled == 0)
+        #expect(outcome.pullFailure == nil)
+        #expect(try await f.git("branch", "--show-current") == "feature")
+        #expect(try await f.git("rev-parse", "HEAD") == head)
+        #expect(try await f.git("rev-parse", "main") == main)
+        #expect(await sink.lines.last == "feature is checked out, not main, nothing to pull")
+    }
+
+    @Test func doesNotPullOnADetachedHead() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+
+        try await f.git("switch", "-q", "--detach")
+        try await f.pushElsewhere("new")
+        let head = try await f.git("rev-parse", "HEAD")
+
+        let sink = await LogSink()
+        let outcome = try await Cleanup(repo: f.repo, dryRun: false, lookup: { _ in .none }).run(log: sink.logger)
+
+        #expect(outcome.pulled == 0)
+        #expect(try await f.git("rev-parse", "HEAD") == head)
+        #expect(try await f.git("rev-parse", "main") == head)
+        #expect(await sink.lines.last == "detached HEAD, nothing to pull")
+    }
+
+    @Test func dryRunReportsThePullWithoutMakingIt() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+
+        try await f.branch("feature", file: "feature")
+        try await f.deleteRemote("feature")
+        try await f.pushElsewhere("new")
+        let main = try await f.git("rev-parse", "main")
+        let cleanup = Cleanup(repo: f.repo, dryRun: true, lookup: { _ in .merged })
+        let sink = await LogSink()
+
+        // On main already.
+        #expect(try await cleanup.run(log: sink.logger).pulled == 0)
+        #expect(await sink.lines.last == "would pull 1 commit into main [dry run]")
+
+        // On a branch a real run would delete, leaving for main.
+        try await f.git("switch", "-q", "feature")
+        await sink.clear()
+        #expect(try await cleanup.run(log: sink.logger).pulled == 0)
+        #expect(await sink.lines.last == "would pull 1 commit into main [dry run]")
+
+        #expect(try await f.git("branch", "--show-current") == "feature")
+        #expect(try await f.git("rev-parse", "main") == main)
+        #expect(try await f.branches() == ["main", "feature"])
+    }
+
+    /// Commits on main that were never pushed stop the pull, but not the rest
+    /// of the run, and they stay.
+    @Test func handsBackAPullThatCannotFastForward() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+
+        try await f.branch("feature", file: "feature")
+        try await f.deleteRemote("feature")
+        try await f.pushElsewhere("new")
+        try await f.commit("unpushed", "unpushed")
+        let main = try await f.git("rev-parse", "main")
+
+        let sink = await LogSink()
+        let outcome = try await Cleanup(repo: f.repo, dryRun: false, lookup: { _ in .merged }).run(log: sink.logger)
+
+        #expect(outcome.pulled == 0)
+        #expect(outcome.pullFailure?.message.hasPrefix("main can't fast-forward to origin/main") == true)
+        #expect(try await f.git("rev-parse", "main") == main)
+        #expect(try await f.branches() == ["main"])
     }
 
     /// Another git fetching at the same moment -- an IDE, right after a merge

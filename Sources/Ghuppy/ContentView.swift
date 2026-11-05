@@ -84,26 +84,20 @@ struct WorkspaceView: View {
     private func actionBar(pinnedOnly: Binding<Bool>, dryRun: Binding<Bool>, author: Binding<String?>) -> some View {
         HStack(spacing: 10) {
             Button {
-                Task { await model.updateAll() }
-            } label: {
-                Label("Update all", systemImage: "arrow.triangle.2.circlepath")
-            }
-            .help("Rescan the folder, fetch with prune and pull every repository, then reload pull requests (⌘R)")
-
-            Button {
                 Task { await model.cleanupAll() }
             } label: {
                 Label("Cleanup all", systemImage: "sparkles")
             }
-            .help("Delete local branches that were merged, in every repository (⇧⌘K)")
+            .help("Rescan the folder, then fetch with prune, delete local branches that were merged, "
+                + "pull the default branch and reload pull requests in every repository (⇧⌘K)")
 
             Toggle("Pinned only", isOn: pinnedOnly)
                 .toggleStyle(.checkbox)
-                .help("Update, clean up and keep reloading pull requests for only the pinned repositories")
+                .help("Clean up and keep reloading pull requests for only the pinned repositories")
 
             Toggle("Dry run", isOn: dryRun)
                 .toggleStyle(.checkbox)
-                .help("Report what cleanup would delete without deleting anything")
+                .help("Report what cleanup would delete and pull without doing it")
 
             Picker("Author", selection: author) {
                 Text("Everyone").tag(String?.none)
@@ -137,8 +131,8 @@ struct WorkspaceView: View {
     }
 
     /// The working directory's size on disk and the free space left on its
-    /// volume, refreshed after each scan, update and cleanup, when something
-    /// under the directory changes, and, for the free space, every second.
+    /// volume, refreshed after each scan and cleanup, when something under
+    /// the directory changes, and, for the free space, every second.
     private var statusBar: some View {
         HStack(spacing: 6) {
             HStack(spacing: 6) {
