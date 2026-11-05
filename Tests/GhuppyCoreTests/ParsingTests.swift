@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import RepoSweepCore
+@testable import GhuppyCore
 
 @Suite struct GitHubRepoParsing {
     @Test(arguments: [

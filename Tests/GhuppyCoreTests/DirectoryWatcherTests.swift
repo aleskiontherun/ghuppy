@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import RepoSweepCore
+@testable import GhuppyCore
 
 struct DirectoryWatcherTests {
     private final class Counter: @unchecked Sendable {
@@ -12,7 +12,7 @@ struct DirectoryWatcherTests {
 
     private func makeDir() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("repo-sweep-watch-\(UUID().uuidString)")
+            .appendingPathComponent("ghuppy-watch-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("a/b"), withIntermediateDirectories: true)
         return dir
     }

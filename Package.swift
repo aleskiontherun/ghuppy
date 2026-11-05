@@ -2,14 +2,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "RepoSweep",
+    name: "Ghuppy",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "RepoSweep", targets: ["RepoSweep"]),
+        .executable(name: "Ghuppy", targets: ["Ghuppy"]),
     ],
     targets: [
-        .target(name: "RepoSweepCore"),
-        .executableTarget(name: "RepoSweep", dependencies: ["RepoSweepCore"]),
-        .testTarget(name: "RepoSweepCoreTests", dependencies: ["RepoSweepCore"]),
+        .target(name: "GhuppyCore"),
+        .executableTarget(name: "Ghuppy", dependencies: ["GhuppyCore"]),
+        .testTarget(name: "GhuppyCoreTests", dependencies: ["GhuppyCore"]),
     ]
 )

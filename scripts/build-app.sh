@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Builds a release RepoSweep.app into ./build. Pass --install to also copy it
+# Builds a release Ghuppy.app into ./build. Pass --install to also copy it
 # into /Applications.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-name=RepoSweep
+name=Ghuppy
+# Still the app's first name, RepoSweep: macOS files the saved settings (pins,
+# tabs, each tab's choices) under this identifier, so changing it would start
+# everyone over with none.
+bundle_id=me.vesnin.reposweep
 app="build/$name.app"
 version=$(git describe --tags --always 2>/dev/null || echo 0.1.0)
 
@@ -27,7 +31,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <dict>
     <key>CFBundleName</key><string>$name</string>
     <key>CFBundleDisplayName</key><string>$name</string>
-    <key>CFBundleIdentifier</key><string>me.vesnin.reposweep</string>
+    <key>CFBundleIdentifier</key><string>$bundle_id</string>
     <key>CFBundleExecutable</key><string>$name</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>

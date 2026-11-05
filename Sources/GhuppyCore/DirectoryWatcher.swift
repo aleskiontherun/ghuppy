@@ -15,7 +15,7 @@ public final class DirectoryWatcher: @unchecked Sendable {
 
     private let handler: Handler
     private let stream: FSEventStreamRef
-    private let queue = DispatchQueue(label: "RepoSweep.DirectoryWatcher", qos: .utility)
+    private let queue = DispatchQueue(label: "Ghuppy.DirectoryWatcher", qos: .utility)
 
     /// Nil when the system can't watch `directory`.
     public init?(directory: URL, latency: TimeInterval = 2, onChange: @escaping @Sendable () -> Void) {

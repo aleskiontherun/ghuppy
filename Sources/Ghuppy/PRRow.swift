@@ -1,4 +1,4 @@
-import RepoSweepCore
+import GhuppyCore
 import SwiftUI
 
 struct PRRow: View {

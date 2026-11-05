@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import RepoSweepCore
+@testable import GhuppyCore
 
 /// A clone of a local bare "origin", with branches merged every way GitHub
 /// merges them and then deleted from the remote, as a merged PR leaves them.
@@ -13,7 +13,7 @@ struct Fixture {
 
     init() async throws {
         dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("repo-sweep-tests-\(UUID().uuidString)")
+            .appendingPathComponent("ghuppy-tests-\(UUID().uuidString)")
             .resolvingSymlinksInPath()
         origin = dir.appendingPathComponent("origin.git")
         clone = dir.appendingPathComponent("work")
