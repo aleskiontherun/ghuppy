@@ -70,6 +70,8 @@ struct PRRow: View {
             Image(systemName: "xmark.circle.fill").foregroundStyle(.red).help("Checks failing")
         case .pending:
             Image(systemName: "clock.fill").foregroundStyle(.orange).help("Checks running")
+        case .awaitingApproval:
+            Image(systemName: "clock.fill").foregroundStyle(.orange).help("Checks waiting for approval")
         case .none:
             Image(systemName: "circle.dashed").foregroundStyle(.tertiary).help("No checks")
         }
