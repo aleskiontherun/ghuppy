@@ -100,6 +100,9 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
         statusCheckRollup?.contains { $0.result == .pending } ?? false
     }
 
+    /// Every check has finished, and at least one of them failed.
+    public var checksFailed: Bool { checks == .failing && !checksRunning }
+
     public var hasConflicts: Bool { mergeable == "CONFLICTING" }
 
     /// The base branch has moved on and its rules want the branch up to date
@@ -126,37 +129,39 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
         }
     }
 
-    /// GitHub won't merge the PR for a reason the checks don't show: a required
-    /// check that never reported, say, or an unresolved conversation. A failure
-    /// or a wait for approval shows in the checks icon, so neither counts.
-    public var isBlocked: Bool {
-        mergeStateStatus == "BLOCKED" && checks != .failing && checks != .awaitingApproval
-    }
+    /// GitHub won't merge the PR. With a failure and a wait for approval ruled
+    /// out, the reason is one the checks don't show: a required check that
+    /// never reported, say, or an unresolved conversation.
+    public var isBlocked: Bool { mergeStateStatus == "BLOCKED" }
 
     public enum Label: Sendable, Equatable {
-        case merged, queued(QueueEntry), draft, conflicts, changesRequested, update, reviewRequired
-        case checksRunning, blocked, ready, approved
+        case merged, queued(QueueEntry), draft, conflicts, changesRequested, checksFailed, update
+        case checksAwaitApproval, reviewRequired, checksRunning, blocked, ready, approved, unknown
     }
 
-    /// The one label a PR shows: the most important that applies, nil when
-    /// none does. A merged or queued PR is past everything below it, and a
-    /// draft isn't asking for anything yet. Then what's holding the merge
-    /// back, from the most work down to checks, which finish on their own, and
-    /// a block with no cause to name, as running checks may be behind it.
-    /// Good news comes last, as anything above it is what's left to do.
-    public var label: Label? {
+    /// The one label a PR shows: the most important that applies. A merged or
+    /// queued PR is past everything below it, and a draft isn't asking for
+    /// anything yet. Then what's holding the merge back: first what takes a
+    /// new commit, the most work first, as that restarts the checks; then what
+    /// waits on someone; then checks, which finish on their own, and a block
+    /// with no cause to name, as running checks may be behind it. Good news
+    /// comes after that, as anything above it is what's left to do. A PR that
+    /// gets to the end is one whose state isn't known yet.
+    public var label: Label {
         if mergedAt != nil { return .merged }
         if let mergeQueue { return .queued(mergeQueue) }
         if isDraft { return .draft }
         if hasConflicts { return .conflicts }
         if review == .changesRequested { return .changesRequested }
+        if checksFailed { return .checksFailed }
         if needsUpdate { return .update }
+        if checks == .awaitingApproval { return .checksAwaitApproval }
         if review == .required { return .reviewRequired }
         if checksRunning { return .checksRunning }
         if isBlocked { return .blocked }
         if isReadyToMerge { return .ready }
         if review == .approved { return .approved }
-        return nil
+        return .unknown
     }
 }
 

@@ -165,20 +165,23 @@ import Testing
     let changesRequested = #""CHANGES_REQUESTED""#
     let entry = PullRequest.QueueEntry(position: 2, state: "QUEUED")
 
+    /// `lookedUp` false is the extras lookup having failed, leaving `applying`
+    /// uncalled.
     func label(
         _ rollup: String = "[]", review: String = "null", mergeState: String = "BLOCKED",
         mergeable: String = "MERGEABLE", draft: Bool = false, queued: Bool = false,
-        mergedAt: String = "null", awaitingApproval: Bool = false
-    ) throws -> PullRequest.Label? {
+        mergedAt: String = "null", awaitingApproval: Bool = false, lookedUp: Bool = true
+    ) throws -> PullRequest.Label {
         let json = """
         [{"number": 7, "title": "t", "url": "https://github.com/octo/hello/pull/7",
           "isDraft": \(draft), "author": null, "headRefName": "b",
           "reviewDecision": \(review), "mergeable": "\(mergeable)", "mergeStateStatus": "\(mergeState)",
           "updatedAt": "2026-10-29T12:00:00Z", "mergedAt": \(mergedAt), "statusCheckRollup": \(rollup)}]
         """
-        return try #require(PullRequests.applying(
+        let prs = try PullRequests.decode(json)
+        return try #require((lookedUp ? PullRequests.applying(
             queue: queued ? [7: entry] : [:], awaitingApproval: awaitingApproval ? [7] : [],
-            to: PullRequests.decode(json)).first).label
+            to: prs) : prs).first).label
     }
 
     @Test func anUpdateOutranksRunningChecks() throws {
@@ -186,25 +189,34 @@ import Testing
     }
 
     /// Each line adds a condition to the ones before it, and the new one wins.
+    /// A failure takes over from running checks, as it only counts once
+    /// they've finished.
     @Test func eachLabelOutranksTheOnesBelowIt() throws {
         let merged = #""2026-10-30T12:00:00Z""#
+        #expect(try label(mergeState: "UNKNOWN") == .unknown)
         #expect(try label(review: approved, mergeState: "UNKNOWN") == .approved)
         #expect(try label(review: approved) == .blocked)
         #expect(try label(running, review: approved) == .checksRunning)
         #expect(try label(running, review: reviewRequired) == .reviewRequired)
-        #expect(try label(running, review: reviewRequired, mergeState: "BEHIND") == .update)
-        #expect(try label(running, review: changesRequested, mergeState: "BEHIND") == .changesRequested)
+        #expect(try label(running, review: reviewRequired, awaitingApproval: true) == .checksAwaitApproval)
         #expect(try label(
-            running, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING") == .conflicts)
+            running, review: reviewRequired, mergeState: "BEHIND", awaitingApproval: true) == .update)
         #expect(try label(
-            running, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
-            draft: true) == .draft)
+            failing, review: reviewRequired, mergeState: "BEHIND", awaitingApproval: true) == .checksFailed)
         #expect(try label(
-            running, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
-            draft: true, queued: true) == .queued(entry))
+            failing, review: changesRequested, mergeState: "BEHIND", awaitingApproval: true) == .changesRequested)
         #expect(try label(
-            running, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
-            draft: true, queued: true, mergedAt: merged) == .merged)
+            failing, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
+            awaitingApproval: true) == .conflicts)
+        #expect(try label(
+            failing, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
+            draft: true, awaitingApproval: true) == .draft)
+        #expect(try label(
+            failing, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
+            draft: true, queued: true, awaitingApproval: true) == .queued(entry))
+        #expect(try label(
+            failing, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
+            draft: true, queued: true, mergedAt: merged, awaitingApproval: true) == .merged)
     }
 
     @Test func readyOutranksApproved() throws {
@@ -212,18 +224,32 @@ import Testing
         #expect(try label(passing, mergeState: "CLEAN") == .ready)
     }
 
+    @Test func failedOnceEveryCheckHasFinished() throws {
+        let failingAndRunning = #"""
+        [{"__typename": "StatusContext", "state": "FAILURE"},
+         {"__typename": "CheckRun", "status": "IN_PROGRESS", "conclusion": ""}]
+        """#
+        #expect(try label(failing) == .checksFailed)
+        #expect(try label(failing, mergeState: "UNSTABLE") == .checksFailed)
+        #expect(try label(failing, review: approved) == .checksFailed)
+        #expect(try label(failingAndRunning) == .checksRunning)
+    }
+
+    @Test func approveWhileAWorkflowWaits() throws {
+        #expect(try label(awaitingApproval: true) == .checksAwaitApproval)
+        #expect(try label(review: approved, awaitingApproval: true) == .checksAwaitApproval)
+        #expect(try label(passing, mergeState: "CLEAN", awaitingApproval: true) == .checksAwaitApproval)
+    }
+
     @Test func blockedWhenTheChecksDoNotSayWhy() throws {
         #expect(try label() == .blocked)
         #expect(try label(passing) == .blocked)
         #expect(try label(passing, review: approved) == .blocked)
-        #expect(try label(failing) == nil)
-        #expect(try label(awaitingApproval: true) == nil)
-        #expect(try label(failing, review: approved) == .approved)
     }
 
-    @Test func noLabelWhenNoneApplies() throws {
-        #expect(try label(failing, mergeState: "UNSTABLE") == nil)
-        #expect(try label(mergeState: "UNKNOWN") == nil)
+    @Test func unknownUntilItIsKnown() throws {
+        #expect(try label(passing, mergeState: "UNKNOWN") == .unknown)
+        #expect(try label(passing, mergeState: "CLEAN", lookedUp: false) == .unknown)
     }
 }
 
