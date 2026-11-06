@@ -134,6 +134,8 @@ struct RepoCard: View {
                 HStack(spacing: 6) {
                     if repo.prsLoaded {
                         Text(model.authorFilter.map { "No open pull requests by \($0)" } ?? "No open pull requests")
+                    } else if model.rateLimitedUntil != nil {
+                        Text("Waiting for GitHub's rate limit")
                     } else {
                         ProgressView().controlSize(.mini)
                         Text("Loading pull requests…")

@@ -92,6 +92,8 @@ final class Workspace: Identifiable {
     /// Free space on the working directory's volume.
     var freeSpace: Int64?
     var measuringSize = false
+    /// When GitHub requests resume, nil while its rate limit isn't pausing them.
+    var rateLimitedUntil: Date?
     /// What the Cleanup all running now has freed so far.
     @ObservationIgnored private var freedByCleanupAll: Int64 = 0
     /// How many commits the Cleanup all running now has pulled so far.
@@ -227,6 +229,19 @@ final class Workspace: Identifiable {
         freeSpace = free
     }
 
+    /// Catches up with the pause on GitHub requests, for the status bar to
+    /// call on a timer: it's shared by every tab, and any `gh` call can start it.
+    func refreshRateLimit() async {
+        let until = await PullRequests.pausedUntil()
+        guard until != rateLimitedUntil else { return }
+        if rateLimitedUntil == nil {
+            append(nil, "GitHub rate limit reached, requests paused", isError: true)
+        } else if until == nil {
+            append(nil, "GitHub requests resumed")
+        }
+        rateLimitedUntil = until
+    }
+
     /// Re-reads which repositories are under the root: ones added since the
     /// last look join the list, deleted ones leave it, and the rest keep
     /// their state. Returns false when there is no root, or another
@@ -305,7 +320,7 @@ final class Workspace: Identifiable {
                 prs = PullRequests.applying(queue: extras.queue, awaitingApproval: extras.awaitingApproval, to: prs)
                 repo.mergedPullRequests = extras.merged
                 repo.extrasError = nil
-            } catch {
+            } catch let error where !(error is RateLimitError) {
                 if repo.extrasError != error.localizedDescription {
                     append(repo.name, error.localizedDescription, isError: true)
                 }
@@ -314,6 +329,9 @@ final class Workspace: Identifiable {
             repo.pullRequests = prs
             repo.prsLoaded = true
             repo.prError = nil
+        } catch is RateLimitError {
+            // The status bar says so, once for every repository, and what's
+            // on screen stays until a reload gets through.
         } catch {
             if repo.prError != error.localizedDescription {
                 append(repo.name, "pull requests: \(error.localizedDescription)", isError: true)

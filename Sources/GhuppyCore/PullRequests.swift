@@ -191,22 +191,58 @@ public enum PullRequests {
     /// Runs `gh`, at most a few at a time and retrying failures with backoff.
     /// GitHub's GraphQL endpoint (or a VPN in front of it) drops bursts of
     /// parallel requests with `HTTP 499` or `unexpected EOF`, and a sweep of
-    /// a workspace is exactly such a burst.
-    static func gh(_ args: [String], cwd: URL) async -> ShellResult {
+    /// a workspace is exactly such a burst. Throws `RateLimitError` when
+    /// GitHub's rate limit stops the call, and without running it while
+    /// requests are paused for that.
+    static func gh(_ args: [String], cwd: URL) async throws -> ShellResult {
         await ghGate.acquire()
-        var result = await Shell.run(Shell.ghPath ?? "gh", args, cwd: cwd)
-        for delay in [1, 3] where !result.ok {
-            try? await Task.sleep(for: .seconds(delay))
-            result = await Shell.run(Shell.ghPath ?? "gh", args, cwd: cwd)
+        let outcome = await attempts(retryDelays: [1, 3], pause: ghPause) {
+            await Shell.run(Shell.ghPath ?? "gh", args, cwd: cwd)
+        } quotaReset: {
+            let result = await Shell.run(
+                Shell.ghPath ?? "gh", ["api", "rate_limit", "--jq", ".resources.graphql"], cwd: cwd
+            )
+            return result.ok ? RateLimit.reset(fromQuota: result.stdout) : nil
         }
         await ghGate.release()
-        return result
+        return try outcome.get()
+    }
+
+    /// Runs `run`, again after each delay while it fails. A rate limit error
+    /// isn't retried, as seconds later it would only fail again and count
+    /// against the limit. `quotaReset` says when the limit lifts, if it can.
+    static func attempts(
+        retryDelays: [Int], pause: RateLimitPause,
+        run: () async -> ShellResult, quotaReset: @Sendable () async -> Date?
+    ) async -> Result<ShellResult, RateLimitError> {
+        var delays = retryDelays.makeIterator()
+        while true {
+            if let until = await pause.pausedUntil() {
+                return .failure(RateLimitError(until: until))
+            }
+            let result = await run()
+            if result.ok {
+                await pause.succeeded()
+                return .success(result)
+            }
+            if RateLimit.isHit(result.stderr) {
+                return .failure(RateLimitError(until: await pause.hit(quotaReset: quotaReset)))
+            }
+            guard let delay = delays.next() else { return .success(result) }
+            try? await Task.sleep(for: .seconds(delay))
+        }
+    }
+
+    /// When GitHub requests resume, nil while they aren't paused.
+    public static func pausedUntil() async -> Date? {
+        await ghPause.pausedUntil()
     }
 
     static let ghGate = AsyncGate(limit: 3)
+    static let ghPause = RateLimitPause()
 
     public static func open(in repo: GitHubRepo, cwd: URL) async throws -> [PullRequest] {
-        let result = await gh([
+        let result = try await gh([
             "pr", "list", "--repo", repo.slug, "--state", "open", "--limit", "100",
             "--json", fields.joined(separator: ","),
         ], cwd: cwd)
@@ -256,7 +292,7 @@ public enum PullRequests {
           }
         }
         """
-        let result = await gh([
+        let result = try await gh([
             "api", "graphql", "-f", "query=\(query)", "-f", "owner=\(repo.owner)", "-f", "name=\(repo.name)",
             "--jq", ".data.repository",
         ], cwd: cwd)
@@ -354,7 +390,7 @@ public enum PullRequests {
     /// An open PR wins over an older merged one for the same head: the branch
     /// is still in use.
     public static func state(ofBranch branch: String, in repo: GitHubRepo, cwd: URL) async throws -> BranchState {
-        let result = await gh([
+        let result = try await gh([
             "pr", "list", "--repo", repo.slug, "--head", branch, "--state", "all",
             "--json", "state",
         ], cwd: cwd)

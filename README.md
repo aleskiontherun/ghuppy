@@ -36,6 +36,13 @@ by every tab.
 The pull requests of the tab on screen are reloaded every two minutes, and
 straight away on coming back to a tab that has gone longer than that.
 
+When GitHub's rate limit stops a request, Ghuppy stops sending any until the
+limit lifts: until the quota resets if it ran out, and otherwise for a minute,
+twice as long each time it happens again in a row, up to half an hour. The
+status bar shows the time requests resume, and the pull requests on screen
+stay as they were. Cleanup carries on meanwhile, and keeps any branch whose
+pull request it can't check.
+
 A pull request shows one label, the first of these that applies: **Merged**,
 **Queued**, **Draft**, **Conflicts**, **Changes**, **Failed**, **Update**,
 **Approve**, **Review**, **CI**, **Blocked**, **Ready**, **Approved**, **…**.

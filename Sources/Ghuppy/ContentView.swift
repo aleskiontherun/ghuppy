@@ -153,6 +153,16 @@ struct WorkspaceView: View {
                 }
             }
             .help("Space the working directory takes up on disk")
+            if let until = model.rateLimitedUntil {
+                Spacer()
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                    Text("GitHub rate limit, paused until \(until, format: .dateTime.hour().minute())")
+                }
+                .foregroundStyle(.orange)
+                .help("GitHub's rate limit was reached, so no requests go to it until then. "
+                    + "Pull requests stay as last loaded, and Cleanup keeps any branch it can't check.")
+            }
             Spacer()
             if let free = model.freeSpace {
                 HStack(spacing: 6) {
@@ -172,6 +182,7 @@ struct WorkspaceView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 model.refreshFreeSpace()
+                await model.refreshRateLimit()
             }
         }
     }
