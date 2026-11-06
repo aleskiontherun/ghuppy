@@ -116,16 +116,17 @@ struct TabBar: View {
                 ForEach(Array(tabs.workspaces.enumerated()), id: \.element.id) { index, workspace in
                     let isDragged = index == drag?.index
                     let shift = drag?.shift(ofTabAt: index) ?? 0
+                    let offset = isDragged ? drag?.offset ?? 0 : 0
                     TabButton(workspace: workspace, selected: workspace.id == tabs.selectedID)
                         .gesture(reorder(workspace))
                         .offset(x: shift)
                         .animation(Self.settle, value: shift)
                         // After the animation, to stay with the pointer.
-                        .offset(x: isDragged ? drag?.offset ?? 0 : 0)
+                        .offset(x: offset)
                         .zIndex(isDragged ? 1 : 0)
                 }
             }
-            .onGeometryChange(for: Double.self) { $0.size.width } action: { trackWidth = $0 }
+            .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { trackWidth = $0 }
             .padding(3)
             .frame(height: 32)
             .background(Capsule().fill(Color.primary.opacity(0.07)))
@@ -147,11 +148,11 @@ struct TabBar: View {
     private func reorder(_ workspace: Workspace) -> some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .global)
             .updating($dragged) { value, dragged, _ in
-                dragged = (workspace.id, value.translation.width)
+                dragged = (workspace.id, Double(value.translation.width))
             }
             .onEnded { value in
                 guard let index = tabs.workspaces.firstIndex(where: { $0.id == workspace.id }) else { return }
-                let target = tabDrag(from: index, translation: value.translation.width).target
+                let target = tabDrag(from: index, translation: Double(value.translation.width)).target
                 withAnimation(Self.settle) { tabs.move(workspace, to: target) }
             }
     }
