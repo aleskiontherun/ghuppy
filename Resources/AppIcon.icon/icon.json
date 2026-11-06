@@ -1,8 +1,8 @@
 {
   "fill": {
     "linear-gradient": [
-      "extended-srgb:0.90980,0.51765,0.24314,1.00000",
-      "extended-srgb:0.76078,0.35294,0.14118,1.00000"
+      "extended-srgb:0.87255,0.47647,0.21765,1.00000",
+      "extended-srgb:0.79804,0.39412,0.16667,1.00000"
     ],
     "orientation": {
       "start": {
@@ -26,7 +26,7 @@
       ],
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.5
+        "opacity": 0.35
       },
       "specular": true
     },
@@ -40,7 +40,7 @@
       ],
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.5
+        "opacity": 0.35
       },
       "specular": true
     },
@@ -54,7 +54,7 @@
       ],
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.5
+        "opacity": 0.35
       },
       "specular": true
     },
@@ -68,7 +68,7 @@
       ],
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.5
+        "opacity": 0.35
       },
       "specular": true
     }
