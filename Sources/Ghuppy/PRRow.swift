@@ -45,9 +45,12 @@ struct PRRow: View {
         case .draft: Badge("Draft", color: .gray)
         case .conflicts: Badge("Conflicts", color: .red)
         case .changesRequested: Badge("Changes", color: .red)
+        case .checksFailed: Badge("Failed", color: .red).help("Checks finished, and at least one failed")
         case .update:
             Badge("Update", color: .orange)
                 .help("Behind its base branch, and has to be brought up to date to merge")
+        case .checksAwaitApproval:
+            Badge("Approve", color: .orange).help("A workflow is waiting for someone to approve its run")
         case .reviewRequired: Badge("Review", color: .orange)
         case .checksRunning: Badge("CI", color: .darkYellow).help("Checks running")
         case .blocked:
@@ -55,7 +58,7 @@ struct PRRow: View {
                 .help("GitHub won't merge it, for a reason its checks don't show")
         case .ready: Badge("Ready", color: .green)
         case .approved: Badge("Approved", color: .green)
-        case nil: Color.clear.frame(width: Badge.width, height: 0)
+        case .unknown: Badge("…", color: .gray).help("Can't tell yet whether it can merge")
         }
     }
 
@@ -91,10 +94,6 @@ private extension Color {
 }
 
 private struct Badge: View {
-    /// The same for every label, and held on a row without one, so the rows
-    /// line up.
-    static let width: CGFloat = 76
-
     let text: String
     let color: Color
 
@@ -108,7 +107,7 @@ private struct Badge: View {
             .font(.caption.weight(.medium))
             .foregroundStyle(color)
             .lineLimit(1)
-            .frame(width: Self.width)
+            .frame(width: 76) // The same for every label, so the rows line up.
             .padding(.vertical, 1)
             .background(color.opacity(0.15), in: Capsule())
     }
