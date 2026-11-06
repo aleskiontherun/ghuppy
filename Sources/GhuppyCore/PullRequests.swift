@@ -125,6 +125,39 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
         default: return false
         }
     }
+
+    /// GitHub won't merge the PR for a reason the checks don't show: a required
+    /// check that never reported, say, or an unresolved conversation. A failure
+    /// or a wait for approval shows in the checks icon, so neither counts.
+    public var isBlocked: Bool {
+        mergeStateStatus == "BLOCKED" && checks != .failing && checks != .awaitingApproval
+    }
+
+    public enum Label: Sendable, Equatable {
+        case merged, queued(QueueEntry), draft, conflicts, changesRequested, update, reviewRequired
+        case checksRunning, blocked, ready, approved
+    }
+
+    /// The one label a PR shows: the most important that applies, nil when
+    /// none does. A merged or queued PR is past everything below it, and a
+    /// draft isn't asking for anything yet. Then what's holding the merge
+    /// back, from the most work down to checks, which finish on their own, and
+    /// a block with no cause to name, as running checks may be behind it.
+    /// Good news comes last, as anything above it is what's left to do.
+    public var label: Label? {
+        if mergedAt != nil { return .merged }
+        if let mergeQueue { return .queued(mergeQueue) }
+        if isDraft { return .draft }
+        if hasConflicts { return .conflicts }
+        if review == .changesRequested { return .changesRequested }
+        if needsUpdate { return .update }
+        if review == .required { return .reviewRequired }
+        if checksRunning { return .checksRunning }
+        if isBlocked { return .blocked }
+        if isReadyToMerge { return .ready }
+        if review == .approved { return .approved }
+        return nil
+    }
 }
 
 extension PullRequest.Check {
