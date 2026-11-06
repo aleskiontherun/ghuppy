@@ -135,15 +135,15 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
 
     public enum Label: Sendable, Equatable {
         case merged, queued(QueueEntry), draft, conflicts, changesRequested, update, reviewRequired
-        case checksRunning, ready, approved, blocked
+        case checksRunning, blocked, ready, approved
     }
 
     /// The one label a PR shows: the most important that applies, nil when
     /// none does. A merged or queued PR is past everything below it, and a
     /// draft isn't asking for anything yet. Then what's holding the merge
-    /// back, from the most work down to checks, which finish on their own.
-    /// Good news comes next, as anything above it is what's left to do.
-    /// Blocked only fills a row with nothing else to say.
+    /// back, from the most work down to checks, which finish on their own, and
+    /// a block with no cause to name, as running checks may be behind it.
+    /// Good news comes last, as anything above it is what's left to do.
     public var label: Label? {
         if mergedAt != nil { return .merged }
         if let mergeQueue { return .queued(mergeQueue) }
@@ -153,9 +153,9 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
         if needsUpdate { return .update }
         if review == .required { return .reviewRequired }
         if checksRunning { return .checksRunning }
+        if isBlocked { return .blocked }
         if isReadyToMerge { return .ready }
         if review == .approved { return .approved }
-        if isBlocked { return .blocked }
         return nil
     }
 }

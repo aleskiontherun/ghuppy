@@ -188,8 +188,8 @@ import Testing
     /// Each line adds a condition to the ones before it, and the new one wins.
     @Test func eachLabelOutranksTheOnesBelowIt() throws {
         let merged = #""2026-10-30T12:00:00Z""#
-        #expect(try label() == .blocked)
-        #expect(try label(review: approved) == .approved)
+        #expect(try label(review: approved, mergeState: "UNKNOWN") == .approved)
+        #expect(try label(review: approved) == .blocked)
         #expect(try label(running, review: approved) == .checksRunning)
         #expect(try label(running, review: reviewRequired) == .reviewRequired)
         #expect(try label(running, review: reviewRequired, mergeState: "BEHIND") == .update)
@@ -215,8 +215,10 @@ import Testing
     @Test func blockedWhenTheChecksDoNotSayWhy() throws {
         #expect(try label() == .blocked)
         #expect(try label(passing) == .blocked)
+        #expect(try label(passing, review: approved) == .blocked)
         #expect(try label(failing) == nil)
         #expect(try label(awaitingApproval: true) == nil)
+        #expect(try label(failing, review: approved) == .approved)
     }
 
     @Test func noLabelWhenNoneApplies() throws {

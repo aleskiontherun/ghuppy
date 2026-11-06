@@ -50,11 +50,11 @@ struct PRRow: View {
                 .help("Behind its base branch, and has to be brought up to date to merge")
         case .reviewRequired: Badge("Review", color: .orange)
         case .checksRunning: Badge("CI", color: .darkYellow).help("Checks running")
-        case .ready: Badge("Ready", color: .green)
-        case .approved: Badge("Approved", color: .green)
         case .blocked:
             Badge("Blocked", color: .red)
                 .help("GitHub won't merge it, for a reason its checks don't show")
+        case .ready: Badge("Ready", color: .green)
+        case .approved: Badge("Approved", color: .green)
         case nil: Color.clear.frame(width: Badge.width, height: 0)
         }
     }
