@@ -1,9 +1,10 @@
 import Foundation
+import GhuppyCore
 import Observation
 import SwiftUI
 
 /// The open tabs, saved to user defaults whenever a tab is opened, closed,
-/// selected, pointed at a different folder, has Pinned only ticked or
+/// moved, selected, pointed at a different folder, has Pinned only ticked or
 /// unticked, or has another author chosen.
 @MainActor @Observable
 final class Tabs {
@@ -67,6 +68,12 @@ final class Tabs {
         }
     }
 
+    func move(_ workspace: Workspace, to target: Int) {
+        guard let index = workspaces.firstIndex(where: { $0.id == workspace.id }), index != target else { return }
+        workspaces.insert(workspaces.remove(at: index), at: target)
+        save()
+    }
+
     func selectNext(_ offset: Int) {
         guard let index = workspaces.firstIndex(where: { $0.id == selectedID }) else { return }
         let count = workspaces.count
@@ -88,16 +95,38 @@ final class Tabs {
 
 /// Finder-style tabs: a rounded track with the selected tab raised in it,
 /// and a round + button beside it. Always shown, so + is always in reach.
+/// A tab can be dragged along the track to another position.
 struct TabBar: View {
+    private static let tabSpacing = 2.0
+    private static let settle = Animation.snappy(duration: 0.2)
+
     @Environment(Tabs.self) private var tabs
+    @State private var trackWidth = 0.0
+    /// A gesture state, so a drag that gets cancelled leaves nothing behind.
+    @GestureState(resetTransaction: Transaction(animation: settle))
+    private var dragged: (id: UUID, translation: Double)?
 
     var body: some View {
+        let drag = dragged.flatMap { dragged in
+            tabs.workspaces.firstIndex { $0.id == dragged.id }
+                .map { tabDrag(from: $0, translation: dragged.translation) }
+        }
         HStack(spacing: 8) {
-            HStack(spacing: 2) {
-                ForEach(tabs.workspaces) { workspace in
+            HStack(spacing: Self.tabSpacing) {
+                ForEach(Array(tabs.workspaces.enumerated()), id: \.element.id) { index, workspace in
+                    let isDragged = index == drag?.index
+                    let shift = drag?.shift(ofTabAt: index) ?? 0
+                    let offset = isDragged ? drag?.offset ?? 0 : 0
                     TabButton(workspace: workspace, selected: workspace.id == tabs.selectedID)
+                        .gesture(reorder(workspace))
+                        .offset(x: shift)
+                        .animation(Self.settle, value: shift)
+                        // After the animation, to stay with the pointer.
+                        .offset(x: offset)
+                        .zIndex(isDragged ? 1 : 0)
                 }
             }
+            .onGeometryChange(for: Double.self) { Double($0.size.width) } action: { trackWidth = $0 }
             .padding(3)
             .frame(height: 32)
             .background(Capsule().fill(Color.primary.opacity(0.07)))
@@ -106,6 +135,26 @@ struct TabBar: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+
+    private func tabDrag(from index: Int, translation: Double) -> TabDrag {
+        let count = tabs.workspaces.count
+        return TabDrag(index: index, count: count,
+                       slot: (trackWidth + Self.tabSpacing) / Double(count),
+                       translation: translation)
+    }
+
+    /// Measured in the window, because the tab moves with the drag.
+    private func reorder(_ workspace: Workspace) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .global)
+            .updating($dragged) { value, dragged, _ in
+                dragged = (workspace.id, Double(value.translation.width))
+            }
+            .onEnded { value in
+                guard let index = tabs.workspaces.firstIndex(where: { $0.id == workspace.id }) else { return }
+                let target = tabDrag(from: index, translation: Double(value.translation.width)).target
+                withAnimation(Self.settle) { tabs.move(workspace, to: target) }
+            }
     }
 }
 

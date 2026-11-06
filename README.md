@@ -103,8 +103,8 @@ Tick **Dry run** to see what Cleanup would do without changing anything.
 
 **+** next to the tabs (⌘T) opens a new tab for another working directory.
 ⌘W (or the × on hover) closes the current tab, and the window once it's the
-last one; ⇧⌘[ and ⇧⌘] switch tabs. Open tabs and the selected one are
-restored on the next launch.
+last one; ⇧⌘[ and ⇧⌘] switch tabs. Drag a tab along the bar to move it. Open
+tabs, in their order, and the selected one are restored on the next launch.
 
 ## Repository discovery
 
