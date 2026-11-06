@@ -108,6 +108,12 @@ struct RepoCard: View {
                 Label(size.formatted(.byteCount(style: .file)), systemImage: "folder")
                     .help("Space the repository takes up on disk")
             }
+            if let counts = repo.refCounts {
+                Text(counts.worktrees == 1 ? "1 worktree" : "\(counts.worktrees) worktrees")
+                    .help("Linked worktrees, besides this checkout")
+                Text("\(counts.localBranches) local").help("Local branches")
+                Text("\(counts.remoteBranches) remote").help("Remote-tracking branches")
+            }
         }
         .font(.callout)
         .foregroundStyle(.secondary)

@@ -62,6 +62,33 @@ public struct LocalStatus: Sendable, Equatable {
     public init() {}
 }
 
+/// One entry of `git worktree list`.
+struct Worktree: Sendable {
+    var path: String
+    var head: String?
+    var branch: String?
+    var detached = false
+    var locked = false
+    /// Git's own verdict that the directory is gone.
+    var prunable = false
+}
+
+/// How many worktrees and branches a repository has, for its header.
+public struct RefCounts: Sendable, Equatable {
+    /// The linked worktrees still on disk, the checkout itself not counted.
+    public var worktrees = 0
+    public var localBranches = 0
+    /// The remote-tracking branches of every remote, each remote's `HEAD`
+    /// pointer not counted.
+    public var remoteBranches = 0
+
+    public init(worktrees: Int = 0, localBranches: Int = 0, remoteBranches: Int = 0) {
+        self.worktrees = worktrees
+        self.localBranches = localBranches
+        self.remoteBranches = remoteBranches
+    }
+}
+
 /// Git operations on one checkout. Every method is safe to call off the main
 /// actor; the actual work happens in child processes.
 public struct GitRepo: Sendable, Hashable {
@@ -136,6 +163,58 @@ public struct GitRepo: Sendable, Hashable {
             }
         }
         return status
+    }
+
+    /// Every worktree registration except the main checkout, which
+    /// `git worktree remove` refuses anyway, and the repo path itself.
+    func linkedWorktrees() async throws -> [Worktree] {
+        var trees: [Worktree] = []
+        var current: Worktree?
+        for line in try await gitChecked("worktree", "list", "--porcelain").split(
+            separator: "\n", omittingEmptySubsequences: false
+        ) {
+            if line.isEmpty {
+                if let tree = current { trees.append(tree) }
+                current = nil
+                continue
+            }
+            let parts = line.split(separator: " ", maxSplits: 1)
+            let key = String(parts[0]), value = parts.count > 1 ? String(parts[1]) : ""
+            switch key {
+            case "worktree": current = Worktree(path: value)
+            case "HEAD": current?.head = value
+            case "branch": current?.branch = value.hasPrefix("refs/heads/") ? String(value.dropFirst(11)) : value
+            case "detached": current?.detached = true
+            case "locked": current?.locked = true
+            case "prunable": current?.prunable = true
+            default: break
+            }
+        }
+        if let tree = current { trees.append(tree) }
+
+        let resolved = { (path: String) in URL(fileURLWithPath: path).resolvingSymlinksInPath().path }
+        var skip: Set<String> = [resolved(path.path)]
+        if let main = trees.first { skip.insert(resolved(main.path)) }
+        return trees.filter { !skip.contains(resolved($0.path)) }
+    }
+
+    /// Counts the repository's worktrees and branches, nil when git can't
+    /// read them.
+    public func refCounts() async -> RefCounts? {
+        guard let trees = try? await linkedWorktrees() else { return nil }
+        let refs = await git("for-each-ref", "--format=%(refname) %(symref)", "refs/heads", "refs/remotes")
+        guard refs.ok else { return nil }
+        var counts = RefCounts(worktrees: trees.filter { !$0.prunable }.count)
+        for line in refs.stdout.split(separator: "\n") {
+            // A symbolic ref, such as `origin/HEAD`, names a branch counted already.
+            guard line.hasSuffix(" ") else { continue }
+            if line.hasPrefix("refs/heads/") {
+                counts.localBranches += 1
+            } else {
+                counts.remoteBranches += 1
+            }
+        }
+        return counts
     }
 
     /// `git fetch --prune`, tried again when another git is writing the same
