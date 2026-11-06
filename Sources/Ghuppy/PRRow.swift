@@ -55,7 +55,7 @@ struct PRRow: View {
         case .blocked:
             Badge("Blocked", color: .red)
                 .help("GitHub won't merge it, for a reason its checks don't show")
-        case nil: EmptyView()
+        case nil: Color.clear.frame(width: Badge.width, height: 0)
         }
     }
 
@@ -91,6 +91,10 @@ private extension Color {
 }
 
 private struct Badge: View {
+    /// The same for every label, and held on a row without one, so the rows
+    /// line up.
+    static let width: CGFloat = 76
+
     let text: String
     let color: Color
 
@@ -104,7 +108,7 @@ private struct Badge: View {
             .font(.caption.weight(.medium))
             .foregroundStyle(color)
             .lineLimit(1)
-            .frame(width: 76)
+            .frame(width: Self.width)
             .padding(.vertical, 1)
             .background(color.opacity(0.15), in: Capsule())
     }
