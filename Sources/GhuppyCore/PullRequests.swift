@@ -125,6 +125,39 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
         default: return false
         }
     }
+
+    /// GitHub won't merge the PR for a reason the checks don't show: a required
+    /// check that never reported, say, or an unresolved conversation. A failure
+    /// or a wait for approval shows in the checks icon, so neither counts.
+    public var isBlocked: Bool {
+        mergeStateStatus == "BLOCKED" && checks != .failing && checks != .awaitingApproval
+    }
+
+    public enum Label: Sendable, Equatable {
+        case merged, queued(QueueEntry), draft, conflicts, changesRequested, update, reviewRequired
+        case checksRunning, blocked, ready, approved
+    }
+
+    /// The one label a PR shows: the most important that applies, nil when
+    /// none does. A merged or queued PR is past everything below it, and a
+    /// draft isn't asking for anything yet. Then what's holding the merge
+    /// back, from the most work down to checks, which finish on their own, and
+    /// a block with no cause to name, as running checks may be behind it.
+    /// Good news comes last, as anything above it is what's left to do.
+    public var label: Label? {
+        if mergedAt != nil { return .merged }
+        if let mergeQueue { return .queued(mergeQueue) }
+        if isDraft { return .draft }
+        if hasConflicts { return .conflicts }
+        if review == .changesRequested { return .changesRequested }
+        if needsUpdate { return .update }
+        if review == .required { return .reviewRequired }
+        if checksRunning { return .checksRunning }
+        if isBlocked { return .blocked }
+        if isReadyToMerge { return .ready }
+        if review == .approved { return .approved }
+        return nil
+    }
 }
 
 extension PullRequest.Check {
@@ -268,7 +301,8 @@ public enum PullRequests {
     }
 
     /// `prs` with their merge queue entries and workflow approvals filled in,
-    /// and the queued ones moved to the end, the next to merge first.
+    /// the ones ready to merge moved to the front, and the queued ones to the
+    /// end, the next to merge first.
     public static func applying(
         queue: [Int: PullRequest.QueueEntry], awaitingApproval: Set<Int>, to prs: [PullRequest]
     ) -> [PullRequest] {
@@ -279,7 +313,8 @@ public enum PullRequests {
         }
         let queued = prs.filter { $0.mergeQueue != nil }
             .sorted { ($0.mergeQueue?.position ?? 0) < ($1.mergeQueue?.position ?? 0) }
-        return prs.filter { $0.mergeQueue == nil } + queued
+        let unqueued = prs.filter { $0.mergeQueue == nil }
+        return unqueued.filter(\.isReadyToMerge) + unqueued.filter { !$0.isReadyToMerge } + queued
     }
 
     /// The authors of `prs` and `selected`, in alphabetical order. `selected`

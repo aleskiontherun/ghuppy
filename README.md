@@ -4,8 +4,9 @@
 
 A small macOS app for keeping a folder full of git checkouts tidy. Pick a
 working directory, and Ghuppy lists every repository under it, with a link
-to each one on GitHub and its pull requests underneath: the open ones, then
-the ones in the merge queue, then the last 3 merged, the last merged first.
+to each one on GitHub and its pull requests underneath: the ones ready to
+merge, then the other open ones, then the ones in the merge queue, then the
+last 3 merged, the last merged first.
 
 - **Cleanup** — `git fetch --prune`, then delete local branches whose work has
   actually landed and the worktrees left behind with them, then a
@@ -21,11 +22,12 @@ the ones in the merge queue, then the last 3 merged, the last merged first.
 
 The status bar at the bottom shows how much space the working directory takes
 up on disk and how much is free on its volume, and each repository shows its
-own size. All of it is measured again after every scan and cleanup.
+own size, then how many linked worktrees, local branches and remote-tracking
+branches it has. All of it is measured again after every scan and cleanup.
 It also follows whatever else is writing to the disk: the free space is
 re-read every second, and the sizes are measured again a few seconds after
 anything under the working directory changes, and at most every few seconds
-while it keeps changing.
+while it keeps changing, and the worktrees and branches counted again with them.
 Cleanup logs the space it freed: the size of each worktree it removed.
 
 Drag the divider above the log to resize it. The height is saved, and shared
@@ -33,6 +35,11 @@ by every tab.
 
 The pull requests of the tab on screen are reloaded every two minutes, and
 straight away on coming back to a tab that has gone longer than that.
+
+A pull request shows one label, the first of these that applies: **Merged**,
+**Queued**, **Draft**, **Conflicts**, **Changes**, **Update**, **Review**,
+**CI**, **Blocked**, **Ready**, **Approved**. One that fits none of them shows
+no label. The icon beside it shows how its checks are doing either way.
 
 Drafts are labelled **Draft**. A pull request that is ready to merge (out of
 draft, not queued, GitHub allowing the merge, no conflicts, checks passing or
@@ -42,6 +49,8 @@ whether a workflow is waiting, nothing is.
 
 A pull request GitHub won't merge until its branch is brought up to date with
 the base branch is labelled **Update**, and one with checks still going **CI**.
+One GitHub won't merge for a reason its checks don't show, such as an
+unresolved conversation, is labelled **Blocked**.
 
 A pull request in its base branch's merge queue shows its place in the queue
 (**Queued #1** is next to merge, in dark yellow), in red once the queue finds it can't be

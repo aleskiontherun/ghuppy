@@ -74,7 +74,7 @@ public struct Cleanup: Sendable {
         let base = await repo.defaultBranch()
         let baseRef = await repo.git("rev-parse", "--verify", "--quiet", "refs/remotes/origin/\(base)").ok
             ? "origin/\(base)" : base
-        let trees = try await linkedWorktrees()
+        let trees = try await repo.linkedWorktrees()
 
         let branches = try await cleanBranches(base: base, baseRef: baseRef, trees: trees, log: log)
         let freed = branches.freed + (await cleanDetachedWorktrees(baseRef: baseRef, trees: trees, log: log))
@@ -271,46 +271,6 @@ public struct Cleanup: Sendable {
     }
 
     // MARK: Worktrees
-
-    struct Worktree: Sendable {
-        var path: String
-        var head: String?
-        var branch: String?
-        var detached = false
-        var locked = false
-    }
-
-    /// Every worktree registration except the main checkout, which
-    /// `git worktree remove` refuses anyway, and the repo path itself.
-    func linkedWorktrees() async throws -> [Worktree] {
-        var trees: [Worktree] = []
-        var current: Worktree?
-        for line in try await repo.gitChecked("worktree", "list", "--porcelain").split(
-            separator: "\n", omittingEmptySubsequences: false
-        ) {
-            if line.isEmpty {
-                if let tree = current { trees.append(tree) }
-                current = nil
-                continue
-            }
-            let parts = line.split(separator: " ", maxSplits: 1)
-            let key = String(parts[0]), value = parts.count > 1 ? String(parts[1]) : ""
-            switch key {
-            case "worktree": current = Worktree(path: value)
-            case "HEAD": current?.head = value
-            case "branch": current?.branch = value.hasPrefix("refs/heads/") ? String(value.dropFirst(11)) : value
-            case "detached": current?.detached = true
-            case "locked": current?.locked = true
-            default: break
-            }
-        }
-        if let tree = current { trees.append(tree) }
-
-        let resolved = { (path: String) in URL(fileURLWithPath: path).resolvingSymlinksInPath().path }
-        var skip: Set<String> = [resolved(repo.path.path)]
-        if let main = trees.first { skip.insert(resolved(main.path)) }
-        return trees.filter { !skip.contains(resolved($0.path)) }
-    }
 
     /// Removes `tree` and returns the space that freed, or nil when the
     /// worktree is kept.

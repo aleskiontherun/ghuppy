@@ -34,6 +34,8 @@ final class RepoState: Identifiable {
     var result: (text: String, isError: Bool)?
     /// The repository's size on disk, nil until first measured.
     var size: Int64?
+    /// How many worktrees and branches it has, nil until first counted.
+    var refCounts: RefCounts?
 
     nonisolated var id: URL { git.path }
 
@@ -152,8 +154,10 @@ final class Workspace: Identifiable {
     /// Re-measures the working directory's size, each repository's share of
     /// it and the free space beside it, in one walk off the main actor. A
     /// measurement still running is cancelled, so the figures shown are
-    /// always the latest root's. It also starts watching the root, so the
-    /// figures follow the disk from then on.
+    /// always the latest root's. Each repository's worktrees and branches
+    /// are counted meanwhile, so they keep up with the size beside them. It
+    /// also starts watching the root, so the figures follow the disk from
+    /// then on.
     func measureDisk() {
         measurement?.cancel()
         guard let root else { return }
@@ -165,6 +169,9 @@ final class Workspace: Identifiable {
         measurement = Task {
             let walk = Task.detached(priority: .utility) {
                 (DiskUsage.allocatedSizes(of: root, splitBy: paths), DiskUsage.freeSpace(at: root))
+            }
+            await forEach(repos) { repo in
+                if let counts = await repo.git.refCounts() { repo.refCounts = counts }
             }
             let measured = await withTaskCancellationHandler {
                 await walk.value
