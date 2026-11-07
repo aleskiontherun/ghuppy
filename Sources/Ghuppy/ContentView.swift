@@ -17,6 +17,9 @@ struct ContentView: View {
                 .id(workspace.id)
         }
         .navigationTitle(workspace.root.map { "Ghuppy — \($0.lastPathComponent)" } ?? "Ghuppy")
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            tabs.selected.refreshIfStale()
+        }
         .toolbar {
             ToolbarItem {
                 Button {
@@ -59,10 +62,9 @@ struct WorkspaceView: View {
                 statusBar
             }
         }
-        .task {
-            if !model.scanned { await model.scan() }
-            await model.keepPRsFresh()
-        }
+        // Each tab has a view of its own, so this runs on launch for the tab
+        // selected then, and on switching to a tab.
+        .task { model.refreshIfStale() }
     }
 
     private var directoryBar: some View {
@@ -108,7 +110,7 @@ struct WorkspaceView: View {
 
             Toggle("Pinned only", isOn: pinnedOnly)
                 .toggleStyle(.checkbox)
-                .help("Clean up and keep reloading pull requests for only the pinned repositories")
+                .help("Have Cleanup all act on only the pinned repositories")
 
             Toggle("Dry run", isOn: dryRun)
                 .toggleStyle(.checkbox)
@@ -126,19 +128,27 @@ struct WorkspaceView: View {
             Spacer()
 
             if let activity = model.bulkActivity ?? (model.scanning ? "Scanning…" : nil) {
-                ProgressView().controlSize(.small)
                 Text(activity).foregroundStyle(.secondary)
             } else if model.root != nil {
                 Text("^[\(model.repos.count) repository](inflect: true)")
                     .foregroundStyle(.secondary)
             }
             Button {
-                Task { await model.scan() }
+                model.refresh()
             } label: {
-                Image(systemName: "arrow.clockwise")
+                Group {
+                    if model.isRefreshing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .frame(width: 16, height: 16)
             }
             .buttonStyle(.borderless)
-            .help("Rescan the folder and reload pull requests without fetching")
+            .accessibilityLabel("Refresh")
+            .help("Rescan the folder and reload every repository's status and pull requests, "
+                + "without fetching (⌘R)")
         }
         .disabled(model.root == nil || model.bulkActivity != nil)
         .padding(.horizontal, 16)
@@ -146,7 +156,7 @@ struct WorkspaceView: View {
     }
 
     /// The working directory's size on disk and the free space left on its
-    /// volume, refreshed after each scan and cleanup, when something under
+    /// volume, refreshed after each refresh and cleanup, when something under
     /// the directory changes, and, for the free space, every second.
     private var statusBar: some View {
         HStack(spacing: 6) {
@@ -212,7 +222,7 @@ struct WorkspaceView: View {
             } actions: {
                 Button("Select…") { model.chooseRoot() }
             }
-        } else if model.repos.isEmpty && !model.scanning {
+        } else if model.repos.isEmpty && !model.isRefreshing {
             ContentUnavailableView("No repositories", systemImage: "tray",
                                    description: Text("No git repositories were found under this folder."))
         } else {

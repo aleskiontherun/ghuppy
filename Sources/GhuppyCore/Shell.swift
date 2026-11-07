@@ -52,17 +52,27 @@ public enum Shell {
     public static let gitPath = locate("git")
     public static let ghPath = locate("gh")
 
+    /// Runs `tool` to the end. Cancelling the calling task terminates it, or
+    /// keeps it from starting, so the result is then a failure that says
+    /// nothing about the tool: check for cancellation before reading it.
     public static func run(
         _ tool: String, _ args: [String], cwd: URL, stdin: String? = nil
     ) async -> ShellResult {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: runSync(tool, args, cwd: cwd, stdin: stdin))
+        let launcher = Launcher()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    continuation.resume(returning: runSync(tool, args, cwd: cwd, stdin: stdin, launcher: launcher))
+                }
             }
+        } onCancel: {
+            launcher.terminate()
         }
     }
 
-    static func runSync(_ tool: String, _ args: [String], cwd: URL, stdin: String?) -> ShellResult {
+    private static func runSync(
+        _ tool: String, _ args: [String], cwd: URL, stdin: String?, launcher: Launcher
+    ) -> ShellResult {
         guard let executable = tool.hasPrefix("/") ? tool : locate(tool) else {
             return ShellResult(status: 127, stdout: "", stderr: "\(tool): command not found")
         }
@@ -78,13 +88,18 @@ public enum Shell {
         process.standardInput = inPipe
 
         do {
-            try process.run()
+            guard try launcher.launch(process) else {
+                return ShellResult(status: SIGTERM, stdout: "", stderr: "")
+            }
         } catch {
             return ShellResult(status: 126, stdout: "", stderr: error.localizedDescription)
         }
 
         if let stdin {
-            inPipe.fileHandleForWriting.write(Data(stdin.utf8))
+            // A process terminated before reading this has closed the pipe,
+            // and writing to it must not take the app down with SIGPIPE.
+            _ = fcntl(inPipe.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+            try? inPipe.fileHandleForWriting.write(contentsOf: Data(stdin.utf8))
         }
         try? inPipe.fileHandleForWriting.close()
 
@@ -106,6 +121,31 @@ public enum Shell {
             stdout: String(decoding: outData, as: UTF8.self),
             stderr: String(decoding: errBox.data, as: UTF8.self)
         )
+    }
+}
+
+/// Starts a process, or terminates it, whichever way the race with
+/// cancellation goes.
+private final class Launcher: @unchecked Sendable {
+    private let lock = NSLock()
+    private var process: Process?
+    private var terminated = false
+
+    /// Starts `process`, or returns false if it's too late to.
+    func launch(_ process: Process) throws -> Bool {
+        try lock.withLock {
+            guard !terminated else { return false }
+            try process.run()
+            self.process = process
+            return true
+        }
+    }
+
+    func terminate() {
+        lock.withLock {
+            terminated = true
+            process?.terminate()
+        }
     }
 }
 

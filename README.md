@@ -23,7 +23,7 @@ last 3 merged, the last merged first.
 The status bar at the bottom shows how much space the working directory takes
 up on disk and how much is free on its volume, and each repository shows its
 own size, then how many linked worktrees, local branches and remote-tracking
-branches it has. All of it is measured again after every scan and cleanup.
+branches it has. All of it is measured again after every refresh and cleanup.
 It also follows whatever else is writing to the disk: the free space is
 re-read every second, and the sizes are measured again a few seconds after
 anything under the working directory changes, and at most every few seconds
@@ -33,8 +33,13 @@ Cleanup logs the space it freed: the size of each worktree it removed.
 Drag the divider above the log to resize it. The height is saved, and shared
 by every tab.
 
-The pull requests of the tab on screen are reloaded every two minutes, and
-straight away on coming back to a tab that has gone longer than that.
+**Refresh** (⌘R, or the button at the end of the action bar) brings the tab on
+screen up to date without fetching: it rescans the working directory, reloads
+every repository's status and pull requests, and measures the disk again. The
+button turns into a spinner for as long as anything is being reloaded, and
+pressing it again starts over, cancelling the refresh under way. A tab also
+refreshes when Ghuppy launches with it selected, and on coming back to it from
+another tab or another app, once a minute has passed since its last refresh.
 
 When GitHub's rate limit stops a request, Ghuppy stops sending any until the
 limit lifts: until the quota resets if it ran out, and otherwise for a minute,
@@ -69,8 +74,8 @@ merged.
 
 Pin a repository (the pin button, or right-click) to keep it at the top of
 the list. Pins are saved, and shared by every tab that lists the repository.
-Tick **Pinned only** to have Cleanup all and the two-minute pull request
-reload act on the pinned repositories alone. Each tab remembers its own
+Tick **Pinned only** to have Cleanup all act on the pinned repositories alone;
+Refresh covers every repository either way. Each tab remembers its own
 checkbox, across launches too.
 
 The **Author** select narrows the pull requests on screen to one person's,

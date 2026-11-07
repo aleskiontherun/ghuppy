@@ -193,7 +193,8 @@ public enum PullRequests {
     /// parallel requests with `HTTP 499` or `unexpected EOF`, and a sweep of
     /// a workspace is exactly such a burst. Throws `RateLimitError` when
     /// GitHub's rate limit stops the call, and without running it while
-    /// requests are paused for that.
+    /// requests are paused for that. Throws `CancellationError` when the
+    /// calling task is cancelled, which terminates a `gh` already running.
     static func gh(_ args: [String], cwd: URL) async throws -> ShellResult {
         await ghGate.acquire()
         let outcome = await attempts(retryDelays: [1, 3], pause: ghPause) {
@@ -205,6 +206,7 @@ public enum PullRequests {
             return result.ok ? RateLimit.reset(fromQuota: result.stdout) : nil
         }
         await ghGate.release()
+        try Task.checkCancellation()
         return try outcome.get()
     }
 
@@ -228,7 +230,7 @@ public enum PullRequests {
             if RateLimit.isHit(result.stderr) {
                 return .failure(RateLimitError(until: await pause.hit(quotaReset: quotaReset)))
             }
-            guard let delay = delays.next() else { return .success(result) }
+            guard !Task.isCancelled, let delay = delays.next() else { return .success(result) }
             try? await Task.sleep(for: .seconds(delay))
         }
     }
@@ -273,8 +275,8 @@ public enum PullRequests {
     static let mergedSearched = 30
 
     /// Asks for the same 100 open PRs `gh pr list` lists: the newest first.
-    /// One query for both, as a repository's PRs are reloaded on a timer and
-    /// every `gh` call counts against the GitHub rate limit.
+    /// One query for both, as every repository's PRs are reloaded on each
+    /// refresh and every `gh` call counts against the GitHub rate limit.
     public static func extras(in repo: GitHubRepo, cwd: URL) async throws -> Extras {
         let query = """
         query($owner: String!, $name: String!) {
