@@ -23,6 +23,9 @@ struct TriangleSpinner: View {
     @State private var started: Date?
     /// When the run will be back at rest, once told to stop.
     @State private var settles: Date?
+    /// When it was told to go again while settling, and how bent its lines
+    /// were then, to bend them back in from there.
+    @State private var resumed: (at: Date, bend: Double)?
 
     private var size: Double { controlSize == .small ? 16 : 20 }
 
@@ -42,13 +45,21 @@ struct TriangleSpinner: View {
         .frame(width: size, height: size)
         .onAppear { if animating { started = .now } }
         .onChange(of: animating) { _, animating in
+            let now = Date.now
             if animating {
-                // Told to go again while settling: carry on from where it is.
-                if settles == nil { started = .now }
+                if let started, settles != nil {
+                    // Told to go again while settling: carry on from where it is.
+                    resumed = (now, bend(at: now, since: started))
+                } else {
+                    started = now
+                    resumed = nil
+                }
                 settles = nil
             } else if let started {
-                let cycles = (Date.now.timeIntervalSince(started) / Self.cycle).rounded(.up)
-                settles = started.addingTimeInterval(max(cycles, 1) * Self.cycle)
+                // The end of a cycle with time left to straighten the lines.
+                let elapsed = now.timeIntervalSince(started)
+                let cycles = ((elapsed + Self.ease) / Self.cycle).rounded(.up)
+                settles = started.addingTimeInterval(cycles * Self.cycle)
             }
         }
         .task(id: settles) {
@@ -57,7 +68,18 @@ struct TriangleSpinner: View {
             guard !Task.isCancelled else { return }
             started = nil
             self.settles = nil
+            resumed = nil
         }
+    }
+
+    /// How far the lines bend, from 0 for straight to 1 for their usual curve:
+    /// easing in from the start or from where a resumed run left them, and out
+    /// towards the end of a settling run.
+    private func bend(at date: Date, since started: Date) -> Double {
+        let easingIn = resumed.map { $0.bend + date.timeIntervalSince($0.at) / Self.ease }
+            ?? date.timeIntervalSince(started) / Self.ease
+        let easingOut = settles.map { $0.timeIntervalSince(date) / Self.ease } ?? .infinity
+        return max(min(easingIn, easingOut, 1), 0)
     }
 
     @ViewBuilder
@@ -71,8 +93,7 @@ struct TriangleSpinner: View {
         } else if left <= 0 {
             SpinnerShape(frame: .triangle)
         } else {
-            let bend = min(elapsed / Self.ease, left / Self.ease, 1)
-            SpinnerShape(frame: SpinnerFrame(at: elapsed, curveScale: bend))
+            SpinnerShape(frame: SpinnerFrame(at: elapsed, curveScale: bend(at: date, since: started)))
         }
     }
 }
