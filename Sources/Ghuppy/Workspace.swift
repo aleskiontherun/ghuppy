@@ -385,7 +385,8 @@ final class Workspace: Identifiable {
 
     /// Starts cleaning up one repository, for Stop All to be able to stop.
     func startCleanup(of repo: RepoState) {
-        track { await self.cleanup(repo) }
+        let dryRun = dryRun
+        track { await self.cleanup(repo, dryRun: dryRun) }
     }
 
     private func track(_ work: @escaping @MainActor () async -> Void) {
@@ -410,9 +411,12 @@ final class Workspace: Identifiable {
         append(nil, "Stopped")
     }
 
-    /// Cleans up the repositories in scope, or every one of them.
+    /// Cleans up the repositories in scope, or every one of them. Dry run is
+    /// read once, here: switching it mid-run doesn't change what the
+    /// repositories still to come get.
     private func cleanupAll(includingUnpinned: Bool = false) async {
         guard bulkActivity == nil else { return }
+        let dryRun = dryRun
         bulkActivity = dryRun ? "Cleaning up (dry run)…" : "Cleaning up…"
         defer { bulkActivity = nil }
         // Let a discovery already in flight (the first one, on opening the
@@ -423,7 +427,7 @@ final class Workspace: Identifiable {
         freedByCleanupAll = 0
         pulledByCleanupAll = 0
         await discover()
-        await forEach(includingUnpinned ? orderedRepos : scopedRepos) { await self.cleanup($0) }
+        await forEach(includingUnpinned ? orderedRepos : scopedRepos) { await self.cleanup($0, dryRun: dryRun) }
         guard !Task.isCancelled else { return }
         append(nil, dryRun ? "Cleanup all finished (dry run, nothing deleted or pulled)"
                            : "Cleanup all finished, pulled \(GitRepo.commits(pulledByCleanupAll)), "
@@ -431,8 +435,7 @@ final class Workspace: Identifiable {
         measureDisk()
     }
 
-    private func cleanup(_ repo: RepoState) async {
-        let dryRun = dryRun
+    private func cleanup(_ repo: RepoState, dryRun: Bool) async {
         await perform(dryRun ? "Cleaning up (dry run)…" : "Cleaning up…", on: repo) {
             let outcome = try await Cleanup(repo: repo.git, dryRun: dryRun).run(log: self.logger(for: repo))
             if dryRun { return "Cleanup dry run done" }

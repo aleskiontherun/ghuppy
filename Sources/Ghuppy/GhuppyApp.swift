@@ -52,16 +52,19 @@ struct GhuppyApp: App {
                     .keyboardShortcut("g")
                 Button("Cleanup All") { tabs.selected.startCleanupAll(includingUnpinned: true) }
                     .keyboardShortcut("g", modifiers: [.command, .shift])
-                Toggle("Pinned Only", isOn: Binding(
-                    get: { tabs.selected.pinnedOnly },
-                    set: { tabs.selected.pinnedOnly = $0 }
-                ))
-                .keyboardShortcut("p")
-                Toggle("Dry Run", isOn: Binding(
-                    get: { tabs.selected.dryRun },
-                    set: { tabs.selected.dryRun = $0 }
-                ))
-                .keyboardShortcut("d", modifiers: [.command, .shift])
+                Group {
+                    Toggle("Pinned Only", isOn: Binding(
+                        get: { tabs.selected.pinnedOnly },
+                        set: { tabs.selected.pinnedOnly = $0 }
+                    ))
+                    .keyboardShortcut("p")
+                    Toggle("Dry Run", isOn: Binding(
+                        get: { tabs.selected.dryRun },
+                        set: { tabs.selected.dryRun = $0 }
+                    ))
+                    .keyboardShortcut("d", modifiers: [.command, .shift])
+                }
+                .disabled(!tabs.selected.canAct)
                 Button("Choose Author…") { tabs.authorMenuRequests += 1 }
                     .keyboardShortcut("u")
                     .disabled(!tabs.selected.canAct)
