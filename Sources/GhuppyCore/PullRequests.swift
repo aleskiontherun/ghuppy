@@ -134,34 +134,42 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
     /// never reported, say, or an unresolved conversation.
     public var isBlocked: Bool { mergeStateStatus == "BLOCKED" }
 
-    public enum Label: Sendable, Equatable {
-        case merged, queued(QueueEntry), draft, conflicts, changesRequested, checksFailed, update
+    /// The labels in the order `label` tries them, the first that applies
+    /// winning: the most important first. A merged or queued PR is past
+    /// everything below it, and a draft isn't asking for anything yet. Then
+    /// what's holding the merge back: first what takes a new commit, the most
+    /// work first, as that restarts the checks; then what waits on someone;
+    /// then checks, which finish on their own, and a block with no cause to
+    /// name, as running checks may be behind it. Good news comes after that,
+    /// as anything above it is what's left to do. A PR that gets to the end is
+    /// one whose state isn't known yet.
+    public enum Label: Sendable, CaseIterable {
+        case merged, queued, draft, changesRequested, conflicts, checksFailed, update
         case checksAwaitApproval, reviewRequired, checksRunning, blocked, ready, approved, unknown
     }
 
-    /// The one label a PR shows: the most important that applies. A merged or
-    /// queued PR is past everything below it, and a draft isn't asking for
-    /// anything yet. Then what's holding the merge back: first what takes a
-    /// new commit, the most work first, as that restarts the checks; then what
-    /// waits on someone; then checks, which finish on their own, and a block
-    /// with no cause to name, as running checks may be behind it. Good news
-    /// comes after that, as anything above it is what's left to do. A PR that
-    /// gets to the end is one whose state isn't known yet.
+    /// The one label a PR shows: the first of `Label.allCases` that applies.
     public var label: Label {
-        if mergedAt != nil { return .merged }
-        if let mergeQueue { return .queued(mergeQueue) }
-        if isDraft { return .draft }
-        if hasConflicts { return .conflicts }
-        if review == .changesRequested { return .changesRequested }
-        if checksFailed { return .checksFailed }
-        if needsUpdate { return .update }
-        if checks == .awaitingApproval { return .checksAwaitApproval }
-        if review == .required { return .reviewRequired }
-        if checksRunning { return .checksRunning }
-        if isBlocked { return .blocked }
-        if isReadyToMerge { return .ready }
-        if review == .approved { return .approved }
-        return .unknown
+        Label.allCases.first(where: applies) ?? .unknown
+    }
+
+    private func applies(_ label: Label) -> Bool {
+        switch label {
+        case .merged: mergedAt != nil
+        case .queued: mergeQueue != nil
+        case .draft: isDraft
+        case .changesRequested: review == .changesRequested
+        case .conflicts: hasConflicts
+        case .checksFailed: checksFailed
+        case .update: needsUpdate
+        case .checksAwaitApproval: checks == .awaitingApproval
+        case .reviewRequired: review == .required
+        case .checksRunning: checksRunning
+        case .blocked: isBlocked
+        case .ready: isReadyToMerge
+        case .approved: review == .approved
+        case .unknown: true
+        }
     }
 }
 

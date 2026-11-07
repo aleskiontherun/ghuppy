@@ -21,14 +21,7 @@ struct ContentView: View {
             tabs.selected.refreshIfStale()
         }
         .toolbar {
-            ToolbarItem {
-                Button {
-                    showLog.toggle()
-                } label: {
-                    Label(showLog ? "Hide Log" : "Show Log", systemImage: "text.alignleft")
-                }
-                .help(showLog ? "Hide the log" : "Show the log")
-            }
+            WorkspaceToolbar(workspace: workspace, showLog: $showLog, authorMenuRequests: tabs.authorMenuRequests)
         }
     }
 }
@@ -39,11 +32,8 @@ struct WorkspaceView: View {
     let showLog: Bool
 
     var body: some View {
-        @Bindable var model = model
         VStack(spacing: 0) {
             directoryBar
-            Divider()
-            actionBar(pinnedOnly: $model.pinnedOnly, dryRun: $model.dryRun, author: $model.authorFilter)
             Divider()
             GeometryReader { proxy in
                 let heights = LogPane.heights(sharing: proxy.size.height)
@@ -91,68 +81,11 @@ struct WorkspaceView: View {
                         .labelStyle(.iconOnly)
                 }
                 .buttonStyle(.borderless)
-                .help("Change the working directory")
+                .tooltip("Change folder")
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-    }
-
-    private func actionBar(pinnedOnly: Binding<Bool>, dryRun: Binding<Bool>, author: Binding<String?>) -> some View {
-        HStack(spacing: 10) {
-            Button {
-                Task { await model.cleanupAll() }
-            } label: {
-                Label("Cleanup all", systemImage: "sparkles")
-            }
-            .help("Rescan the folder, then fetch with prune, delete local branches that were merged, "
-                + "pull the default branch and reload pull requests in every repository (⇧⌘K)")
-
-            Toggle("Pinned only", isOn: pinnedOnly)
-                .toggleStyle(.checkbox)
-                .help("Have Cleanup all act on only the pinned repositories")
-
-            Toggle("Dry run", isOn: dryRun)
-                .toggleStyle(.checkbox)
-                .help("Report what cleanup would delete and pull without doing it")
-
-            Picker("Author", selection: author) {
-                Text("Everyone").tag(String?.none)
-                ForEach(model.authors, id: \.self) { login in
-                    Text(login).tag(String?.some(login))
-                }
-            }
-            .fixedSize()
-            .help("Show only the pull requests of one author")
-
-            Spacer()
-
-            if let activity = model.bulkActivity ?? (model.scanning ? "Scanning…" : nil) {
-                Text(activity).foregroundStyle(.secondary)
-            } else if model.root != nil {
-                Text("^[\(model.repos.count) repository](inflect: true)")
-                    .foregroundStyle(.secondary)
-            }
-            Button {
-                model.refresh()
-            } label: {
-                Group {
-                    if model.isRefreshing {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                }
-                .frame(width: 16, height: 16)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Refresh")
-            .help("Rescan the folder and reload every repository's status and pull requests, "
-                + "without fetching (⌘R)")
-        }
-        .disabled(model.root == nil || model.bulkActivity != nil)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
     }
 
     /// The working directory's size on disk and the free space left on its
@@ -165,22 +98,29 @@ struct WorkspaceView: View {
                 if let size = model.directorySize {
                     Text(size, format: .byteCount(style: .file))
                 } else {
-                    Text("measuring…")
+                    Text(model.stopped ? "not measured" : "measuring…")
                 }
                 if model.measuringSize && model.directorySize != nil {
                     ProgressView().controlSize(.mini)
                 }
             }
-            .help("Space the working directory takes up on disk")
+            .tooltip("Size on disk")
+            Spacer()
+            if let activity = model.bulkActivity ?? (model.scanning ? "Scanning…" : nil) {
+                Text(activity)
+            } else if model.stopped && model.repos.isEmpty {
+                Text("Stopped")
+            } else {
+                Text("^[\(model.repos.count) repository](inflect: true)")
+            }
             if let until = model.rateLimitedUntil {
                 Spacer()
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle")
                     Text("GitHub rate limit, paused until \(until, format: .dateTime.hour().minute())")
                 }
-                .foregroundStyle(.orange)
-                .help("GitHub's rate limit was reached, so no requests go to it until then. "
-                    + "Pull requests stay as last loaded, and Cleanup keeps any branch it can't check.")
+                .foregroundStyle(Color.logoOrange)
+                .tooltip("GitHub's rate limit was reached")
             }
             Spacer()
             if let free = model.freeSpace {
@@ -188,13 +128,14 @@ struct WorkspaceView: View {
                     Image(systemName: "internaldrive")
                     Text("\(free, format: .byteCount(style: .file)) free")
                 }
-                .help("Free space on the volume holding the working directory")
+                .tooltip("Free space")
             }
         }
-        .font(.caption)
+        // Finder's status bar, which this one sits alongside on the desktop.
+        .font(.system(size: 11))
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
-        .padding(.vertical, 4)
+        .frame(height: 27)
         // Reading free space is one statfs call, so it is polled the way
         // Finder's status bar does, for as long as the bar is on screen.
         .task {

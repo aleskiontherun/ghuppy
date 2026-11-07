@@ -50,6 +50,21 @@ struct RefreshSlotTests {
         #expect(!slot.isRunning)
     }
 
+    @Test func cancelStopsTheJobRunning() async {
+        let slot = RefreshSlot()
+        var started = false
+        let job = slot.start {
+            started = true
+            await untilCancelled()
+        }
+        while !started {
+            await Task.yield()
+        }
+        slot.cancel()
+        await job.value
+        #expect(!slot.isRunning)
+    }
+
     @Test func staysRunningWhileOneJobTakesOverFromAnother() async {
         let slot = RefreshSlot()
         var started = false

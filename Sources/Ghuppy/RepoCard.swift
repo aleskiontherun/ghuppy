@@ -44,12 +44,11 @@ struct RepoCard: View {
         Button(action: togglePin) {
             Image(systemName: pinned ? "pin.fill" : "pin")
                 .rotationEffect(.degrees(45))
-                .foregroundStyle(pinned ? Color.orange : Color.secondary)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
+                .foregroundStyle(pinned ? Color.logoOrange : Color.secondary)
+                .frame(width: 16, height: 16)
         }
-        .buttonStyle(.borderless)
-        .help(pinned ? "Unpin" : "Pin to the top")
+        .buttonStyle(.hoverHighlight)
+        .tooltip(pinned ? "Unpin" : "Pin to the top")
     }
 
     private var header: some View {
@@ -64,7 +63,7 @@ struct RepoCard: View {
                                 .labelStyle(.titleAndIcon)
                                 .font(.callout)
                         }
-                        .help(github.url.absoluteString)
+                        .tooltip(github.url.absoluteString)
                     } else {
                         Text("no GitHub remote")
                             .font(.callout)
@@ -75,23 +74,33 @@ struct RepoCard: View {
             }
             Spacer()
             if let activity = repo.activity {
-                ProgressView().controlSize(.small)
+                // The cleanup icon beside it is animating meanwhile.
                 Text(activity).font(.callout).foregroundStyle(.secondary)
             } else if let result = repo.result {
                 Text(result.text)
                     .font(.callout)
-                    .foregroundStyle(result.isError ? .red : .secondary)
+                    .foregroundStyle(result.isError ? Color.warmRed : Color.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .help(result.text)
+                    .tooltip(result.text)
                     .frame(maxWidth: 260, alignment: .trailing)
             }
-            Button("Cleanup") { Task { await model.cleanup(repo) } }
-                .help(model.dryRun ? "Report what cleanup would delete and pull without doing it"
-                                   : "Fetch with prune, delete local branches that were merged, "
-                                       + "pull the default branch, and reload pull requests")
-                .disabled(repo.activity != nil)
-            pinButton
+            HStack(spacing: 4) {
+                // Not disabled while it runs, which would dim the animation.
+                Button {
+                    if repo.activity == nil { model.startCleanup(of: repo) }
+                } label: {
+                    TriangleSpinner(animating: repo.activity != nil)
+                        .controlSize(.small)
+                        .foregroundStyle(Color.primary)
+                }
+                .buttonStyle(.hoverHighlight)
+                .accessibilityLabel("Cleanup")
+                .tooltip(model.dryRun ? "Dry run this repository" : "Clean up this repository")
+                pinButton
+            }
+            // Level with the middle of the title beside them.
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
         }
     }
 
@@ -99,20 +108,20 @@ struct RepoCard: View {
         HStack(spacing: 8) {
             let status = repo.status
             Label(status.branch ?? "detached HEAD", systemImage: "arrow.triangle.branch")
-            if status.ahead > 0 { Text("↑\(status.ahead)").help("\(status.ahead) commits to push") }
-            if status.behind > 0 { Text("↓\(status.behind)").help("\(status.behind) commits to pull") }
+            if status.ahead > 0 { Text("↑\(status.ahead)").tooltip("\(status.ahead) commits to push") }
+            if status.behind > 0 { Text("↓\(status.behind)").tooltip("\(status.behind) commits to pull") }
             if status.dirty {
-                Text("modified").foregroundStyle(.orange).help("The checkout has uncommitted changes")
+                Text("modified").foregroundStyle(Color.logoOrange).tooltip("Uncommitted changes")
             }
             if let size = repo.size {
                 Label(size.formatted(.byteCount(style: .file)), systemImage: "folder")
-                    .help("Space the repository takes up on disk")
+                    .tooltip("Size on disk")
             }
             if let counts = repo.refCounts {
                 Text(counts.worktrees == 1 ? "1 worktree" : "\(counts.worktrees) worktrees")
-                    .help("Linked worktrees, besides this checkout")
-                Text("\(counts.localBranches) local").help("Local branches")
-                Text("\(counts.remoteBranches) remote").help("Remote-tracking branches")
+                    .tooltip("Linked worktrees")
+                Text("\(counts.localBranches) local").tooltip("Local branches")
+                Text("\(counts.remoteBranches) remote").tooltip("Remote-tracking branches")
             }
         }
         .font(.callout)
@@ -127,7 +136,7 @@ struct RepoCard: View {
             if let error = repo.prError {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.callout)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.warmRed)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
             } else if open.isEmpty {

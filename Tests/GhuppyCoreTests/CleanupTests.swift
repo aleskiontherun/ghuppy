@@ -134,6 +134,26 @@ final class LogSink {
         #expect(try await f.branches() == ["main", "abandoned", "pr-open", "alive"])
     }
 
+    @Test func deletesNothingOnceStopped() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+        try await f.branch("merged-one", file: "one")
+        try await f.branch("merged-two", file: "two")
+        try await f.deleteRemote("merged-one")
+        try await f.deleteRemote("merged-two")
+
+        // Stopped just as GitHub's answer says a branch can go.
+        let lookup: Cleanup.PRLookup = { _ in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return .merged
+        }
+        let sink = await LogSink()
+        let run = Task { try await Cleanup(repo: f.repo, dryRun: false, lookup: lookup).run(log: sink.logger) }
+        _ = await run.result
+
+        #expect(try await f.branches().isSuperset(of: ["merged-one", "merged-two"]))
+    }
+
     @Test func leavesMergedCheckedOutBranchForUpdatedMain() async throws {
         let f = try await Fixture()
         defer { f.cleanUp() }
