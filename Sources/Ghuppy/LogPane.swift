@@ -20,6 +20,7 @@ struct LogPane: View {
                     .buttonStyle(.borderless)
                     .font(.caption)
                     .disabled(model.log.isEmpty)
+                    .tooltip("Clear log", shortcut: "⌘K")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
@@ -51,7 +52,7 @@ struct LogPane: View {
                 Text(repo).foregroundStyle(.secondary)
             }
             Text(line.text)
-                .foregroundStyle(line.isError ? .red : .primary)
+                .foregroundStyle(line.isError ? Color.warmRed : Color.primary)
         }
         .font(.system(.caption, design: .monospaced))
         .textSelection(.enabled)

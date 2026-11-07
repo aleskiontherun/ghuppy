@@ -20,7 +20,7 @@ struct PRRow: View {
                         .truncationMode(.tail)
                 }
             }
-            .help(pr.url.absoluteString)
+            .tooltip(pr.url.absoluteString)
 
             Spacer(minLength: 8)
 
@@ -35,37 +35,18 @@ struct PRRow: View {
 
     @ViewBuilder
     private var badge: some View {
-        switch pr.label {
-        case .merged: Badge("Merged", color: .purple)
-        case .queued(let entry):
-            Badge("Queued #\(entry.position)", color: entry.isUnmergeable ? .red : .darkYellow)
-                .help(entry.isUnmergeable
-                    ? "In the merge queue, but it can't be merged"
-                    : "In the merge queue, position \(entry.position)")
-        case .draft: Badge("Draft", color: .gray)
-        case .conflicts: Badge("Conflicts", color: .red)
-        case .changesRequested: Badge("Changes", color: .red)
-        case .checksFailed: Badge("Failed", color: .red).help("Checks finished, and at least one failed")
-        case .update:
-            Badge("Update", color: .orange)
-                .help("Behind its base branch, and has to be brought up to date to merge")
-        case .checksAwaitApproval:
-            Badge("Approve", color: .orange).help("A workflow is waiting for someone to approve its run")
-        case .reviewRequired: Badge("Review", color: .orange)
-        case .checksRunning: Badge("CI", color: .darkYellow).help("Checks running")
-        case .blocked:
-            Badge("Blocked", color: .red)
-                .help("GitHub won't merge it, for a reason its checks don't show")
-        case .ready: Badge("Ready", color: .green)
-        case .approved: Badge("Approved", color: .green)
-        case .unknown: Badge("…", color: .gray).help("Can't tell yet whether it can merge")
+        if pr.label == .queued, let entry = pr.mergeQueue {
+            Badge("Queued #\(entry.position)", color: entry.isUnmergeable ? .warmRed : .darkYellow)
+                .tooltip(entry.isUnmergeable ? "Can't merge from the queue" : "Place in the merge queue")
+        } else {
+            LabelBadge(label: pr.label)
         }
     }
 
     @ViewBuilder
     private var checksIcon: some View {
         if pr.mergedAt != nil {
-            Image(systemName: "arrow.triangle.merge").foregroundStyle(.purple).help("Merged")
+            Image(systemName: "arrow.triangle.merge").foregroundStyle(Color.softPurple).tooltip("Merged")
         } else {
             openChecksIcon
         }
@@ -75,40 +56,15 @@ struct PRRow: View {
     private var openChecksIcon: some View {
         switch pr.checks {
         case .passing:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).help("Checks passing")
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.softGreen).tooltip("Checks passing")
         case .failing:
-            Image(systemName: "xmark.circle.fill").foregroundStyle(.red).help("Checks failing")
+            Image(systemName: "xmark.circle.fill").foregroundStyle(Color.warmRed).tooltip("Checks failing")
         case .pending:
-            Image(systemName: "clock.fill").foregroundStyle(.orange).help("Checks running")
+            Image(systemName: "clock.fill").foregroundStyle(Color.logoOrange).tooltip("Checks running")
         case .awaitingApproval:
-            Image(systemName: "clock.fill").foregroundStyle(.orange).help("Checks waiting for approval")
+            Image(systemName: "clock.fill").foregroundStyle(Color.logoOrange).tooltip("Workflow awaiting approval")
         case .none:
-            Image(systemName: "circle.dashed").foregroundStyle(.tertiary).help("No checks")
+            Image(systemName: "circle.dashed").foregroundStyle(.tertiary).tooltip("No checks")
         }
-    }
-}
-
-private extension Color {
-    /// Yellow that stays readable on both light and dark backgrounds.
-    static let darkYellow = Color(red: 0.72, green: 0.53, blue: 0.04)
-}
-
-private struct Badge: View {
-    let text: String
-    let color: Color
-
-    init(_ text: String, color: Color) {
-        self.text = text
-        self.color = color
-    }
-
-    var body: some View {
-        Text(text)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(color)
-            .lineLimit(1)
-            .frame(width: 76) // The same for every label, so the rows line up.
-            .padding(.vertical, 1)
-            .background(color.opacity(0.15), in: Capsule())
     }
 }

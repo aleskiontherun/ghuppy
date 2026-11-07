@@ -16,9 +16,15 @@ last 3 merged, the last merged first.
   how many commits the pull brought in, and Cleanup all shows the total. A
   fetch that loses a race with another git fetching the same repository (an
   IDE, say) is retried.
-- **Cleanup all** (⇧⌘K) first rescans the working directory, so repositories
-  added or deleted since the last look join or leave the list, then cleans up
-  every one, a few at a time.
+- **Cleanup all** (the triangle in the toolbar, or ⌘G) first rescans the
+  working directory, so repositories added or deleted since the last look join
+  or leave the list, then cleans them up, a few at a time: only the pinned ones
+  while Pinned only is on, unless ⇧⌘G asks for every one.
+
+⌘/ lists every action and shortcut, and how labels are decided. ⌘U opens the
+author select. ⌘L shows or hides the log, and ⌘K clears it. ⌃C stops everything running in
+every tab. A cleanup stopped this way deletes nothing more, and what it had
+already deleted stays deleted.
 
 The status bar at the bottom shows how much space the working directory takes
 up on disk and how much is free on its volume, and each repository shows its
@@ -33,9 +39,9 @@ Cleanup logs the space it freed: the size of each worktree it removed.
 Drag the divider above the log to resize it. The height is saved, and shared
 by every tab.
 
-**Refresh** (⌘R, or the button at the end of the action bar) brings the tab on
-screen up to date without fetching: it rescans the working directory, reloads
-every repository's status and pull requests, and measures the disk again. The
+**Refresh** (⌘R, or the button in the toolbar) brings the tab on screen up to
+date without fetching: it rescans the working directory, reloads the
+repositories' status and pull requests, and measures the disk again. The
 button turns into a spinner for as long as anything is being reloaded, and
 pressing it again starts over, cancelling the refresh under way. A tab also
 refreshes when Ghuppy launches with it selected, and on coming back to it from
@@ -49,7 +55,7 @@ stay as they were. Cleanup carries on meanwhile, and keeps any branch whose
 pull request it can't check.
 
 A pull request shows one label, the first of these that applies: **Merged**,
-**Queued**, **Draft**, **Conflicts**, **Changes**, **Failed**, **Update**,
+**Queued**, **Draft**, **Changes**, **Conflicts**, **Failed**, **Update**,
 **Approve**, **Review**, **CI**, **Blocked**, **Ready**, **Approved**, **…**.
 The icon beside it shows how its checks are doing either way.
 
@@ -74,9 +80,10 @@ merged.
 
 Pin a repository (the pin button, or right-click) to keep it at the top of
 the list. Pins are saved, and shared by every tab that lists the repository.
-Tick **Pinned only** to have Cleanup all act on the pinned repositories alone;
-Refresh covers every repository either way. Each tab remembers its own
-checkbox, across launches too.
+Turn on the **pin button in the toolbar** (⌘P) to have Cleanup (⌘G) and Refresh
+(⌘R) act on the pinned repositories alone, though every repository still loads
+the first time. Cleanup All (⇧⌘G) and Refresh All (⇧⌘R) cover every repository
+either way. Each tab remembers its own setting, across launches too.
 
 The **Author** select narrows the pull requests on screen to one person's,
 out of everyone with a pull request listed; every repository stays in the list.
@@ -113,7 +120,8 @@ default branch is removed. Nothing is ever removed with `--force`. A locked
 worktree, or one with uncommitted work, is kept and named in the log, and so
 is its branch.
 
-Tick **Dry run** to see what Cleanup would do without changing anything.
+Turn on **Dry run**, the flask in the toolbar (⇧⌘D), to see what Cleanup would do
+without changing anything.
 
 ## Tabs
 

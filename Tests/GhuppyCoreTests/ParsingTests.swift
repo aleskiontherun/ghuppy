@@ -204,16 +204,17 @@ import Testing
         #expect(try label(
             failing, review: reviewRequired, mergeState: "BEHIND", awaitingApproval: true) == .checksFailed)
         #expect(try label(
-            failing, review: changesRequested, mergeState: "BEHIND", awaitingApproval: true) == .changesRequested)
+            failing, review: reviewRequired, mergeState: "BEHIND", mergeable: "CONFLICTING",
+            awaitingApproval: true) == .conflicts)
         #expect(try label(
             failing, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
-            awaitingApproval: true) == .conflicts)
+            awaitingApproval: true) == .changesRequested)
         #expect(try label(
             failing, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
             draft: true, awaitingApproval: true) == .draft)
         #expect(try label(
             failing, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
-            draft: true, queued: true, awaitingApproval: true) == .queued(entry))
+            draft: true, queued: true, awaitingApproval: true) == .queued)
         #expect(try label(
             failing, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
             draft: true, queued: true, mergedAt: merged, awaitingApproval: true) == .merged)

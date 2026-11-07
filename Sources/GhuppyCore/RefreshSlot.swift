@@ -28,4 +28,9 @@ public final class RefreshSlot {
         latest = task
         return task
     }
+
+    /// Cancels the job running and any behind it.
+    public func cancel() {
+        latest?.cancel()
+    }
 }

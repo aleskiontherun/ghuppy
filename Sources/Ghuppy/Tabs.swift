@@ -4,13 +4,13 @@ import Observation
 import SwiftUI
 
 /// The open tabs, saved to user defaults whenever a tab is opened, closed,
-/// moved, selected, pointed at a different folder, has Pinned only ticked or
-/// unticked, or has another author chosen.
+/// moved, selected, pointed at a different folder, has Pinned only switched
+/// on or off, or has another author chosen.
 @MainActor @Observable
 final class Tabs {
     private static let tabsKey = "tabs"
     private static let selectedKey = "selectedTab"
-    /// Each tab's Pinned only checkbox, in the order of `tabsKey`.
+    /// Each tab's Pinned only setting, in the order of `tabsKey`.
     private static let pinnedOnlyKey = "pinnedOnlyTabs"
     /// Each tab's chosen author, in the order of `tabsKey`, empty for everyone.
     private static let authorFilterKey = "authorFilterTabs"
@@ -18,6 +18,8 @@ final class Tabs {
     private static let legacyRootKey = "workingDirectory"
 
     private(set) var workspaces: [Workspace] = []
+    /// Goes up each time the author select is asked to open.
+    var authorMenuRequests = 0
     var selectedID: UUID {
         didSet { save() }
     }
@@ -171,7 +173,7 @@ private struct NewTabButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .help("Open a new tab for another working directory (⌘T)")
+        .tooltip("New tab", shortcut: "⌘T")
 
         if #available(macOS 26, *) {
             button.glassEffect(.regular.interactive(), in: Circle())
@@ -207,7 +209,7 @@ private struct TabButton: View {
                             .contentShape(Circle())
                     }
                     .buttonStyle(.borderless)
-                    .help("Close Tab (⌘W)")
+                    .tooltip("Close tab", shortcut: "⌘W")
                     .opacity(hovering ? 1 : 0)
                 }
                 Spacer()
@@ -231,6 +233,6 @@ private struct TabButton: View {
         .contentShape(Capsule())
         .onTapGesture { tabs.selectedID = workspace.id }
         .onHover { hovering = $0 }
-        .help(workspace.root?.path ?? "No working directory selected")
+        .tooltip(workspace.root?.path ?? "No working directory selected")
     }
 }
