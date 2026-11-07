@@ -21,7 +21,7 @@ public struct SpinnerFrame: Sendable {
     private static let pointsPerLine = 12
 
     /// The dots at rest, joined by straight lines.
-    public static let triangle = SpinnerFrame(dots: SpinnerFrame(at: 0).dots, curve: 0)
+    public static let triangle = SpinnerFrame(at: 0, curveScale: 0)
 
     /// The crossing dot, then the two dots on the circle.
     public let dots: [SIMD2<Double>]
@@ -32,8 +32,10 @@ public struct SpinnerFrame: Sendable {
     /// The lines joining the dots, as a closed run of points.
     public let outline: [SIMD2<Double>]
 
-    /// The frame at `time` seconds, which must not be negative.
-    public init(at time: TimeInterval) {
+    /// The frame at `time` seconds, which must not be negative, with the
+    /// lines bent by `curveScale` of their usual amount: 0 straightens them,
+    /// for easing in and out of the still triangle.
+    public init(at time: TimeInterval, curveScale: Double = 1) {
         let crossings = time / Self.crossingDuration
         let crossing = crossings.rounded(.down)
         let progress = crossings - crossing
@@ -52,7 +54,7 @@ public struct SpinnerFrame: Sendable {
         // The lines go straight as the dot passes the centre, which is where
         // one setting hands over to the other without a jump.
         let bend = cos(.pi * progress)
-        let curve = Self.deepestCurves[(progress < 0.5 ? index : index + 1) % 2] * bend * bend
+        let curve = Self.deepestCurves[(progress < 0.5 ? index : index + 1) % 2] * bend * bend * curveScale
 
         self.init(dots: dots, curve: curve)
     }

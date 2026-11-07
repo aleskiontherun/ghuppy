@@ -114,6 +114,20 @@ struct SpinnerFrameTests {
         #expect(abs((triangle.outline.map(length).min() ?? 0) - 0.5) < 1e-9)
     }
 
+    @Test func curveScaleBendsTheLinesInFromTheStillTriangle() {
+        let start = SpinnerFrame(at: 0, curveScale: 0)
+        #expect(start.dots == SpinnerFrame.triangle.dots)
+        #expect(start.curve == 0)
+        #expect(SpinnerFrame(at: 0, curveScale: 0.5).curve == SpinnerFrame(at: 0).curve / 2)
+    }
+
+    @Test func dotsAreBackWhereTheyStartedAfterTwoCrossings() {
+        let later = SpinnerFrame(at: 2 * duration).dots
+        for (dot, start) in zip(later, SpinnerFrame.triangle.dots) {
+            #expect(distance(dot, start) < 1e-9)
+        }
+    }
+
     @Test func curveNeverJumps() {
         let curves = frames().map(\.curve)
         for (previous, next) in zip(curves, curves.dropFirst()) {
