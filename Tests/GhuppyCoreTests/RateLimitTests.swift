@@ -149,6 +149,16 @@ import Testing
         #expect(await script.calls == 3)
     }
 
+    @Test func doesNotRetryOnceCancelled() async {
+        let script = Script([Self.dropped, Self.ok])
+        let outcome = await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await attempt(script)
+        }.value
+        #expect(await script.calls == 1)
+        #expect((try? outcome.get().ok) == false)
+    }
+
     @Test func doesNotRetryARateLimit() async {
         let script = Script([Self.limited])
         let reset = Date.now.addingTimeInterval(1200)

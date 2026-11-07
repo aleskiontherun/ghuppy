@@ -50,8 +50,9 @@ final class RepoState: Identifiable {
 final class Workspace: Identifiable {
     /// How many repositories are fetched or cleaned at once.
     private static let concurrency = 6
-    /// How often, in seconds, the pull requests on screen are reloaded.
-    private static let prRefreshInterval: TimeInterval = 120
+    /// How long, in seconds, a tab that comes back on screen goes without a
+    /// refresh after the last one.
+    private static let refreshedRecently: TimeInterval = 60
 
     let id = UUID()
     var root: URL? {
@@ -63,18 +64,19 @@ final class Workspace: Identifiable {
         let pins = Pins.shared
         return repos.filter { pins.isPinned($0.git.path) } + repos.filter { !pins.isPinned($0.git.path) }
     }
-    /// The repositories Cleanup all and the timed pull request reload act on.
+    /// The repositories Cleanup all acts on.
     private var bulkRepos: [RepoState] {
         pinnedOnly ? orderedRepos.filter { Pins.shared.isPinned($0.git.path) } : orderedRepos
     }
     var log: [LogLine] = []
     var scanning = false
-    /// Set once the first scan has started, so switching back to a tab
-    /// doesn't rescan it.
-    var scanned = false
     var bulkActivity: String?
-    /// Whether Cleanup all and the timed pull request reload act on the
-    /// pinned repositories only.
+    /// Whether anything on the tab is being brought up to date: a refresh, or
+    /// a cleanup, which rescans and reloads pull requests along the way.
+    var isRefreshing: Bool {
+        refreshSlot.isRunning || bulkActivity != nil || scanning || repos.contains(where: \.loadingPRs)
+    }
+    /// Whether Cleanup all acts on the pinned repositories only.
     var pinnedOnly: Bool {
         didSet { onSavedStateChange?() }
     }
@@ -105,8 +107,9 @@ final class Workspace: Identifiable {
     /// measuring them again while they are.
     @ObservationIgnored private var sizesStale = false
     @ObservationIgnored private var remeasuring: Task<Void, Never>?
-    /// When the pull requests were last reloaded across the tab.
-    @ObservationIgnored private var prsRefreshed = Date.distantPast
+    private let refreshSlot = RefreshSlot()
+    /// When the last refresh started.
+    @ObservationIgnored private var lastRefresh = Date.distantPast
     @ObservationIgnored var onSavedStateChange: (() -> Void)?
 
     var title: String { root?.lastPathComponent ?? "New Tab" }
@@ -136,21 +139,42 @@ final class Workspace: Identifiable {
         authorFilter = nil
         directorySize = nil
         freeSpace = nil
-        Task { await scan() }
+        refresh()
     }
 
-    // MARK: Scanning
+    // MARK: Refreshing
 
-    /// Rediscovers the repositories and reloads each one's status and pull
-    /// requests, without fetching.
-    func scan() async {
-        guard await discover() else { return }
-        measureDisk()
-        prsRefreshed = .now
-        await forEach(orderedRepos) { repo in
-            await self.refreshLocal(repo)
-            await self.refreshPRs(repo)
+    /// Brings the whole tab up to date without fetching, in place of any
+    /// refresh still running: rediscovers the repositories, reloads every
+    /// one's status and pull requests, Pinned only or not, and measures the
+    /// disk again.
+    func refresh() {
+        guard root != nil else { return }
+        lastRefresh = .now
+        refreshSlot.start { [self] in
+            guard await discover() else { return }
+            measureDisk()
+            await forEach(orderedRepos) { repo in
+                await self.refreshLocal(repo)
+                await self.refreshPRs(repo)
+            }
+            let measuring = measurement
+            await withTaskCancellationHandler {
+                await measuring?.value
+            } onCancel: {
+                measuring?.cancel()
+            }
         }
+    }
+
+    /// Refreshes a tab that has just come on screen, by launching, by
+    /// switching to it or by switching to the app, unless that wouldn't tell
+    /// anything new: it was refreshed moments ago, or is being. A cleanup
+    /// running reloads the same repositories.
+    func refreshIfStale() {
+        guard !refreshSlot.isRunning, bulkActivity == nil,
+              Date.now.timeIntervalSince(lastRefresh) >= Self.refreshedRecently else { return }
+        refresh()
     }
 
     /// Re-measures the working directory's size, each repository's share of
@@ -244,17 +268,17 @@ final class Workspace: Identifiable {
 
     /// Re-reads which repositories are under the root: ones added since the
     /// last look join the list, deleted ones leave it, and the rest keep
-    /// their state. Returns false when there is no root, or another
-    /// discovery is already running.
+    /// their state. Returns false when there is no root, another discovery
+    /// is already running, or the calling task was cancelled.
     @discardableResult
     func discover() async -> Bool {
         guard let root, !scanning else { return false }
-        scanned = true
         scanning = true
         defer { scanning = false }
 
         let paths = await Discovery.repositories(under: root)
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        guard !Task.isCancelled else { return false }
         let hadList = !repos.isEmpty
         let existing = Dictionary(uniqueKeysWithValues: repos.map { ($0.git.path, $0) })
         let updated = paths.map { path in
@@ -283,28 +307,18 @@ final class Workspace: Identifiable {
         if repo.github == nil {
             repo.github = await repo.git.gitHubRepo()
         }
-        repo.status = await repo.git.status()
-    }
-
-    /// Reloads the pull requests on a timer until cancelled, for the tab on
-    /// screen to run: GitHub's rate limit is shared, so tabs out of sight
-    /// don't spend it. A tab brought back after the interval has passed
-    /// reloads straight away.
-    func keepPRsFresh() async {
-        while !Task.isCancelled {
-            let wait = Self.prRefreshInterval + prsRefreshed.timeIntervalSinceNow
-            try? await Task.sleep(for: .seconds(max(wait, 0)))
-            guard !Task.isCancelled else { return }
-            prsRefreshed = .now
-            // Cleanup all is busy with the same repositories.
-            guard bulkActivity == nil else { continue }
-            await forEach(bulkRepos.filter { !$0.loadingPRs }) { await self.refreshPRs($0) }
-        }
+        let status = await repo.git.status()
+        // A git that was terminated reports an empty status.
+        guard !Task.isCancelled else { return }
+        repo.status = status
     }
 
     /// Reloads a repository's pull requests. A failure is logged when it
-    /// starts, not on every reload the timer goes on to make.
+    /// starts, not on every reload that goes on to meet it.
     func refreshPRs(_ repo: RepoState) async {
+        // A git that was terminated leaves `github` nil, which isn't a
+        // repository that has lost its remote.
+        guard !Task.isCancelled else { return }
         guard let github = repo.github else {
             repo.pullRequests = []
             repo.mergedPullRequests = []
@@ -320,7 +334,7 @@ final class Workspace: Identifiable {
                 prs = PullRequests.applying(queue: extras.queue, awaitingApproval: extras.awaitingApproval, to: prs)
                 repo.mergedPullRequests = extras.merged
                 repo.extrasError = nil
-            } catch let error where !(error is RateLimitError) {
+            } catch let error where !(error is RateLimitError || error is CancellationError) {
                 if repo.extrasError != error.localizedDescription {
                     append(repo.name, error.localizedDescription, isError: true)
                 }
@@ -332,6 +346,8 @@ final class Workspace: Identifiable {
         } catch is RateLimitError {
             // The status bar says so, once for every repository, and what's
             // on screen stays until a reload gets through.
+        } catch is CancellationError {
+            // The refresh taking over reloads it.
         } catch {
             if repo.prError != error.localizedDescription {
                 append(repo.name, "pull requests: \(error.localizedDescription)", isError: true)
@@ -419,6 +435,7 @@ final class Workspace: Identifiable {
 
     /// Runs `body` for each repository, a few at a time: enough to overlap
     /// network round-trips without starting a hundred `git fetch`es at once.
+    /// Cancelling the calling task starts no more of them.
     private func forEach(_ items: [RepoState], _ body: @escaping @MainActor (RepoState) async -> Void) async {
         await withTaskGroup(of: Void.self) { group in
             var iterator = items.makeIterator()
@@ -427,7 +444,7 @@ final class Workspace: Identifiable {
                 group.addTask { await body(item) }
             }
             while await group.next() != nil {
-                if let item = iterator.next() {
+                if !Task.isCancelled, let item = iterator.next() {
                     group.addTask { await body(item) }
                 }
             }

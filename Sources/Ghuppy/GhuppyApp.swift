@@ -33,11 +33,17 @@ struct GhuppyApp: App {
                     .keyboardShortcut("w", modifiers: [.command, .shift])
             }
             CommandMenu("Repositories") {
-                let workspace = tabs.selected
-                Button("Cleanup All") { Task { await workspace.cleanupAll() } }
-                    .keyboardShortcut("k", modifiers: [.command, .shift])
+                // The actions look up the tab when they run: a shortcut can
+                // fire an action built while another tab was selected.
+                Button("Cleanup All") {
+                    let workspace = tabs.selected
+                    Task { await workspace.cleanupAll() }
+                }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
                 Divider()
-                Button("Rescan Without Fetching") { Task { await workspace.scan() } }
+                Button("Refresh") { tabs.selected.refresh() }
+                    .keyboardShortcut("r")
+                    .disabled(tabs.selected.root == nil || tabs.selected.bulkActivity != nil)
             }
             CommandGroup(after: .windowArrangement) {
                 Button("Show Previous Tab") { tabs.selectNext(-1) }
