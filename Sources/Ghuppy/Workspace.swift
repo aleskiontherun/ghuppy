@@ -448,8 +448,9 @@ final class Workspace: Identifiable {
         await refreshPRs(repo)
         // A bulk action measures once, when it's done. The whole working
         // directory is walked again rather than just this repository: its
-        // nested repositories and removed worktrees count elsewhere.
-        if bulkActivity == nil { measureDisk() }
+        // nested repositories and removed worktrees count elsewhere. A
+        // stopped cleanup starts nothing more.
+        if bulkActivity == nil, !Task.isCancelled { measureDisk() }
     }
 
     /// Runs `body`, which returns the text to show when it succeeds.

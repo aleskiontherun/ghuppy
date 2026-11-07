@@ -18,7 +18,8 @@ last 3 merged, the last merged first.
   IDE, say) is retried.
 - **Cleanup all** (the triangle in the toolbar, or ⌘G) first rescans the
   working directory, so repositories added or deleted since the last look join
-  or leave the list, then cleans them up, a few at a time.
+  or leave the list, then cleans them up, a few at a time: only the pinned ones
+  while Pinned only is on, unless ⇧⌘G asks for every one.
 
 ⌘/ lists every action and shortcut, and how labels are decided. ⌘U opens the
 author select. ⌘L shows or hides the log, and ⌘K clears it. ⌃C stops everything running in
