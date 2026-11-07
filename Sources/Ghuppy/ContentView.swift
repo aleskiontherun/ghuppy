@@ -79,8 +79,17 @@ struct WorkspaceView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button(model.root == nil ? "Select Working Directory…" : "Change…") {
-                model.chooseRoot()
+            if model.root == nil {
+                Button("Select Working Directory…") { model.chooseRoot() }
+            } else {
+                Button {
+                    model.chooseRoot()
+                } label: {
+                    Label("Change Working Directory…", systemImage: "pencil")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderless)
+                .help("Change the working directory")
             }
         }
         .padding(.horizontal, 16)
