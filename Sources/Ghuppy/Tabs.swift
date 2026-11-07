@@ -211,7 +211,7 @@ private struct TabButton: View {
                     .opacity(hovering ? 1 : 0)
                 }
                 Spacer()
-                if workspace.bulkActivity != nil || workspace.scanning {
+                if workspace.isRefreshing {
                     ProgressView().controlSize(.mini)
                 }
             }

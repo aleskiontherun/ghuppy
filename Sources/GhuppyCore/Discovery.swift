@@ -15,13 +15,15 @@ public enum Discovery {
     /// ignores its scratch areas and agent worktrees but deliberately not the
     /// sibling repos inside it. Linked worktrees found anyway are dropped:
     /// they belong to their main checkout, and its cleanup handles them.
+    /// Cancelling the calling task ends the walk early, with only part of the
+    /// list.
     public static func repositories(under root: URL) async -> [URL] {
         let root = root.standardizedFileURL.resolvingSymlinksInPath()
         let rootRepo = isRepo(root) ? GitRepo(path: root) : nil
 
         var found: [URL] = rootRepo == nil ? [] : [root]
         var queue: [(URL, Int)] = [(root, 0)]
-        while !queue.isEmpty {
+        while !queue.isEmpty, !Task.isCancelled {
             let (dir, depth) = queue.removeFirst()
             guard depth < maxDepth else { continue }
             var children = subdirectories(of: dir)
