@@ -141,6 +141,12 @@ directory is itself a repository, paths it ignores are skipped. Linked
 worktrees are left out of the list, because cleaning up their main checkout
 handles them.
 
+The list keeps up with the disk without a refresh: a repository cloned,
+created or deleted under the working directory joins or leaves it a few
+seconds after the disk goes quiet, and only the new ones load. Changes inside
+the repositories already listed don't start a rescan, so the watching costs
+next to nothing however busy they are.
+
 ## Requirements
 
 - macOS 14 or later

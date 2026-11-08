@@ -10,6 +10,13 @@ struct DirectoryWatcherTests {
         func increment() { lock.withLock { count += 1 } }
     }
 
+    private final class Paths: @unchecked Sendable {
+        private let lock = NSLock()
+        private var paths: [String] = []
+        var value: [String] { lock.withLock { paths } }
+        func add(_ more: [String]) { lock.withLock { paths += more } }
+    }
+
     private func makeDir() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ghuppy-watch-\(UUID().uuidString)")
@@ -30,10 +37,29 @@ struct DirectoryWatcherTests {
         let dir = try makeDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let changes = Counter()
-        let watcher = try #require(DirectoryWatcher(directory: dir, latency: 0.2) { changes.increment() })
+        let watcher = try #require(DirectoryWatcher(directory: dir, latency: 0.2) { _ in changes.increment() })
 
         try Data(repeating: 1, count: 10).write(to: dir.appendingPathComponent("a/b/new"))
         #expect(await wait(for: changes))
+        withExtendedLifetime(watcher) {}
+    }
+
+    @Test func reportsTheDirectoryThatChanged() async throws {
+        let dir = try makeDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try await Task.sleep(for: .seconds(1))
+        let changed = Paths()
+        let watcher = try #require(DirectoryWatcher(directory: dir, latency: 0.2) { changed.add($0) })
+
+        try Data(repeating: 1, count: 10).write(to: dir.appendingPathComponent("a/b/new"))
+        let expected = dir.appendingPathComponent("a/b").resolvingSymlinksInPath().path
+        var seen = false
+        for _ in 0..<50 where !seen {
+            // FSEvents reports the real path, `/private` and all.
+            seen = changed.value.contains { $0.hasSuffix(expected + "/") || $0.hasSuffix(expected) }
+            if !seen { try? await Task.sleep(for: .milliseconds(100)) }
+        }
+        #expect(seen)
         withExtendedLifetime(watcher) {}
     }
 
@@ -45,7 +71,7 @@ struct DirectoryWatcherTests {
         // Let the events from creating the file pass before watching.
         try await Task.sleep(for: .seconds(1))
         let changes = Counter()
-        let watcher = try #require(DirectoryWatcher(directory: dir, latency: 0.2) { changes.increment() })
+        let watcher = try #require(DirectoryWatcher(directory: dir, latency: 0.2) { _ in changes.increment() })
 
         let handle = try FileHandle(forWritingTo: file)
         try handle.seekToEnd()
@@ -61,7 +87,7 @@ struct DirectoryWatcherTests {
         // Let the events from creating the directory pass before watching.
         try await Task.sleep(for: .seconds(1))
         let changes = Counter()
-        let watcher = try #require(DirectoryWatcher(directory: dir, latency: 0.2) { changes.increment() })
+        let watcher = try #require(DirectoryWatcher(directory: dir, latency: 0.2) { _ in changes.increment() })
 
         try await Task.sleep(for: .seconds(1))
         #expect(changes.value == 0)
@@ -72,7 +98,7 @@ struct DirectoryWatcherTests {
         let dir = try makeDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let changes = Counter()
-        var watcher = DirectoryWatcher(directory: dir, latency: 0.2) { changes.increment() }
+        var watcher = DirectoryWatcher(directory: dir, latency: 0.2) { _ in changes.increment() }
         #expect(watcher != nil)
         watcher = nil
 

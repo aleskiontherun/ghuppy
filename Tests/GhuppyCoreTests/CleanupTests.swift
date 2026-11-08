@@ -497,4 +497,19 @@ final class LogSink {
         let found = await Discovery.repositories(under: f.dir).map(\.lastPathComponent)
         #expect(found == ["nested", "work"])
     }
+
+    @Test func discoveryReportsTheWorktreesItLeftOut() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+
+        try await f.branch("wt", file: "wt")
+        try await f.git("worktree", "add", "-q", f.dir.appendingPathComponent("worktree").path, "wt")
+
+        let scan = await Discovery.scan(under: f.dir)
+        #expect(scan.repositories.map(\.lastPathComponent) == ["work"])
+        #expect(scan.excluded.map(\.lastPathComponent) == ["worktree"])
+        // A checkout known to be a main one isn't asked again.
+        let trusting = await Discovery.scan(under: f.dir, knownMain: Set(scan.repositories + scan.excluded))
+        #expect(trusting.repositories.map(\.lastPathComponent) == ["work", "worktree"])
+    }
 }
