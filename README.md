@@ -50,6 +50,16 @@ but not while it’s being cleaned up. A tab also
 refreshes when Ghuppy launches with it selected, and on coming back to it from
 another tab or another app, once a minute has passed since its last refresh.
 
+Between refreshes, the tab on screen asks GitHub every 30 seconds whether
+anything changed, and reloads only the repositories whose pull requests did:
+one was opened, pushed to, reviewed, edited, closed or merged, or a GitHub
+Actions run started or finished. Asking costs nothing against the rate limit
+while nothing has changed. GitHub's answers can be up to a minute old, and
+checks reported by anything other than GitHub Actions show at the next
+refresh. It covers the same repositories as Refresh, and waits while
+anything else is reloading them. ⌃C stops the check under way, not the ones
+after it.
+
 When GitHub's rate limit stops a request, Ghuppy stops sending any until the
 limit lifts: until the quota resets if it ran out, and otherwise for a minute,
 twice as long each time it happens again in a row, up to half an hour. The
