@@ -20,23 +20,18 @@ public struct SpinnerFrame: Sendable {
     /// whole circle.
     private static let deepestCurves = [1.2, -1.2]
 
-    /// The dots at rest, joined by straight lines.
-    public static let triangle = SpinnerFrame(at: 0, curveScale: 0)
-
     /// The crossing dot, then the two dots on the circle. When `circling`, the
     /// last is always the dot that never crosses.
     public let dots: [SIMD2<Double>]
 
     /// How far the lines bend right now, on the scale of `deepestCurves`.
-    public let curve: Double
+    let curve: Double
 
     /// The lines joining the dots, as a closed run of points.
     public let outline: [SIMD2<Double>]
 
-    /// The frame at `time` seconds, which must not be negative, with the
-    /// lines bent by `curveScale` of their usual amount: 0 straightens them,
-    /// for easing in and out of the still triangle. The whole frame is turned
-    /// by `rotation` radians, and each line drawn with `pointsPerLine` points.
+    /// The frame at `time` seconds, which must not be negative, turned by
+    /// `rotation` radians, with each line drawn with `pointsPerLine` points.
     ///
     /// When `circling`, each crossing starts a sixth of a turn further on than
     /// the last, so the dot sliding forwards round the circle is always the
@@ -44,7 +39,6 @@ public struct SpinnerFrame: Sendable {
     /// started after six crossings; otherwise every two.
     public init(
         at time: TimeInterval,
-        curveScale: Double = 1,
         rotation: Double = 0,
         pointsPerLine: Int = 12,
         circling: Bool = false
@@ -68,7 +62,7 @@ public struct SpinnerFrame: Sendable {
         // The lines go straight as the dot passes the centre, which is where
         // one setting hands over to the other without a jump.
         let bend = cos(.pi * progress)
-        let curve = Self.deepestCurves[(progress < 0.5 ? index : index + 1) % 2] * bend * bend * curveScale
+        let curve = Self.deepestCurves[(progress < 0.5 ? index : index + 1) % 2] * bend * bend
 
         self.dots = dots
         self.curve = curve
