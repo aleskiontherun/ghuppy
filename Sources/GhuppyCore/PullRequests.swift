@@ -203,9 +203,9 @@ public enum PullRequests {
     /// GitHub's rate limit stops the call, and without running it while
     /// requests are paused for that. Throws `CancellationError` when the
     /// calling task is cancelled, which terminates a `gh` already running.
-    static func gh(_ args: [String], cwd: URL) async throws -> ShellResult {
+    static func gh(_ args: [String], cwd: URL, retryDelays: [Int] = [1, 3]) async throws -> ShellResult {
         await ghGate.acquire()
-        let outcome = await attempts(retryDelays: [1, 3], pause: ghPause) {
+        let outcome = await attempts(retryDelays: retryDelays, pause: ghPause) {
             await Shell.run(Shell.ghPath ?? "gh", args, cwd: cwd)
         } quotaReset: {
             let result = await Shell.run(
