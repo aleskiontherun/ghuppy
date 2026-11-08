@@ -7,7 +7,9 @@ import Foundation
 /// other two slide along it the opposite way, and the three meet as an
 /// equilateral triangle as the crossing ends. The next crossing starts at
 /// once, so no dot ever stops: the dot that just arrived carries on along the
-/// circle, and another sets off across, each dot taking its turn.
+/// circle, and another sets off across, each dot taking its turn. Or, when
+/// `circling`, one dot never crosses but keeps sliding round the circle while
+/// the other two take turns.
 public struct SpinnerFrame: Sendable {
     /// How long one crossing takes, in seconds.
     public static let crossingDuration = 0.5
@@ -18,12 +20,11 @@ public struct SpinnerFrame: Sendable {
     /// whole circle.
     private static let deepestCurves = [1.2, -1.2]
 
-    private static let pointsPerLine = 12
-
     /// The dots at rest, joined by straight lines.
     public static let triangle = SpinnerFrame(at: 0, curveScale: 0)
 
-    /// The crossing dot, then the two dots on the circle.
+    /// The crossing dot, then the two dots on the circle. When `circling`, the
+    /// last is always the dot that never crosses.
     public let dots: [SIMD2<Double>]
 
     /// How far the lines bend right now, on the scale of `deepestCurves`.
@@ -34,14 +35,27 @@ public struct SpinnerFrame: Sendable {
 
     /// The frame at `time` seconds, which must not be negative, with the
     /// lines bent by `curveScale` of their usual amount: 0 straightens them,
-    /// for easing in and out of the still triangle.
-    public init(at time: TimeInterval, curveScale: Double = 1) {
+    /// for easing in and out of the still triangle. The whole frame is turned
+    /// by `rotation` radians, and each line drawn with `pointsPerLine` points.
+    ///
+    /// When `circling`, each crossing starts a sixth of a turn further on than
+    /// the last, so the dot sliding forwards round the circle is always the
+    /// same one, and the other two take turns crossing. It is back where it
+    /// started after six crossings; otherwise every two.
+    public init(
+        at time: TimeInterval,
+        curveScale: Double = 1,
+        rotation: Double = 0,
+        pointsPerLine: Int = 12,
+        circling: Bool = false
+    ) {
         let crossings = time / Self.crossingDuration
         let crossing = crossings.rounded(.down)
         let progress = crossings - crossing
         let index = Int(crossing.truncatingRemainder(dividingBy: 2))
+        let turn = circling ? Int(crossing.truncatingRemainder(dividingBy: 6)) : index
 
-        let start = Double(index * 60 - 75) * .pi / 180
+        let start = Double(turn * 60 - 75) * .pi / 180 + rotation
         let spread = (120 - 60 * progress) * .pi / 180
         // Keeps the centre of the triangle on the centre of the circle.
         let distance = -2 * cos(spread)
@@ -56,15 +70,11 @@ public struct SpinnerFrame: Sendable {
         let bend = cos(.pi * progress)
         let curve = Self.deepestCurves[(progress < 0.5 ? index : index + 1) % 2] * bend * bend * curveScale
 
-        self.init(dots: dots, curve: curve)
-    }
-
-    private init(dots: [SIMD2<Double>], curve: Double) {
         self.dots = dots
         self.curve = curve
         outline = dots.indices.flatMap { side in
             let start = dots[side], end = dots[(side + 1) % dots.count]
-            return Self.arc(from: start, to: end, through: (start + end) / 2 * (1 - curve / 2))
+            return Self.arc(from: start, to: end, through: (start + end) / 2 * (1 - curve / 2), points: pointsPerLine)
         }
     }
 
@@ -72,16 +82,17 @@ public struct SpinnerFrame: Sendable {
         SIMD2(cos(angle), sin(angle))
     }
 
-    /// Points along the circular arc through three points, leaving out `end`,
-    /// where the next line starts.
+    /// `points` points along the circular arc through three points, leaving
+    /// out `end`, where the next line starts.
     private static func arc(
         from start: SIMD2<Double>,
         to end: SIMD2<Double>,
-        through middle: SIMD2<Double>
+        through middle: SIMD2<Double>,
+        points: Int
     ) -> [SIMD2<Double>] {
         let chord = end - start, offset = middle - start
         let twiceArea = 2 * (chord.x * offset.y - chord.y * offset.x)
-        let steps = (0..<pointsPerLine).map { Double($0) / Double(pointsPerLine) }
+        let steps = (0..<points).map { Double($0) / Double(points) }
         guard abs(twiceArea) > 1e-6 else {
             return steps.map { start + chord * $0 }
         }

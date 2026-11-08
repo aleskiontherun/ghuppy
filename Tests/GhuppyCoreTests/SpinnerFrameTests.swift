@@ -81,6 +81,60 @@ struct SpinnerFrameTests {
         #expect(Array(crossers.prefix(3)) == Array(crossers.suffix(3)))
     }
 
+    /// Follows each dot from frame to frame over `crossings` crossings, and
+    /// returns which of them was crossing halfway through each one, and where
+    /// each was at every step.
+    private func track(circling: Bool, crossings: Int) -> (crossers: [Int], paths: [[SIMD2<Double>]]) {
+        var tracked = SpinnerFrame(at: 0, circling: circling).dots
+        var crossers: [Int] = []
+        var paths = tracked.map { [$0] }
+        let steps = 200
+        for step in 1...(crossings * steps) {
+            let frame = SpinnerFrame(at: Double(step) / Double(steps) * duration, circling: circling)
+            tracked = tracked.map { dot in
+                frame.dots.min { distance(dot, $0) < distance(dot, $1) } ?? dot
+            }
+            for index in tracked.indices { paths[index].append(tracked[index]) }
+            if step % steps == steps / 2 {
+                crossers.append(tracked.firstIndex { length($0) < 1e-9 } ?? -1)
+            }
+        }
+        return (crossers, paths)
+    }
+
+    @Test func circlingDotNeverCrossesAndOnlyGoesForwards() {
+        let (crossers, paths) = track(circling: true, crossings: 12)
+        #expect(!crossers.contains(2))
+        var previous = atan2(paths[2][0].y, paths[2][0].x), turned = 0.0
+        for point in paths[2].dropFirst() {
+            #expect(abs(length(point) - 1) < 1e-9)
+            let angle = atan2(point.y, point.x)
+            var step = angle - previous
+            if step < -.pi { step += 2 * .pi }
+            if step > .pi { step -= 2 * .pi }
+            #expect(step > 0)
+            turned += step
+            previous = angle
+        }
+        // A sixth of a turn per crossing: twice round in twelve.
+        #expect(abs(turned - 4 * .pi) < 1e-6)
+    }
+
+    @Test func circlingLeavesTheOtherTwoTakingTurns() {
+        let crossers = track(circling: true, crossings: 12).crossers
+        #expect(crossers == Array(repeating: [0, 1], count: 6).flatMap { $0 })
+    }
+
+    @Test func circlingDotsSitWhereTheyWouldOtherwiseAsEachCrossingEnds() {
+        for crossing in 0...12 {
+            let time = Double(crossing) * duration
+            let usual = SpinnerFrame(at: time).dots
+            for dot in SpinnerFrame(at: time, circling: true).dots {
+                #expect(usual.contains { distance($0, dot) < 1e-9 })
+            }
+        }
+    }
+
     @Test func linesAlternateBetweenCurvingInAndOut() {
         func closestToCentre(at crossing: Int) -> Double {
             SpinnerFrame(at: Double(crossing) * duration).outline.map(length).min() ?? .infinity

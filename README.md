@@ -16,7 +16,7 @@ last 3 merged, the last merged first.
   how many commits the pull brought in, and Cleanup all shows the total. A
   fetch that loses a race with another git fetching the same repository (an
   IDE, say) is retried.
-- **Cleanup all** (the triangle in the toolbar, or ⌘G) first rescans the
+- **Cleanup all** (the fish in the toolbar, or ⌘G) first rescans the
   working directory, so repositories added or deleted since the last look join
   or leave the list, then cleans them up, a few at a time: only the pinned ones
   while Pinned only is on, unless ⇧⌘G asks for every one.

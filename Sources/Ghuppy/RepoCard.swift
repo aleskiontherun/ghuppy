@@ -90,7 +90,7 @@ struct RepoCard: View {
                 Button {
                     if repo.activity == nil { model.startCleanup(of: repo) }
                 } label: {
-                    TriangleSpinner(animating: repo.activity != nil)
+                    FishSpinner(animating: repo.activity != nil)
                         .controlSize(.small)
                         .foregroundStyle(Color.primary)
                 }
