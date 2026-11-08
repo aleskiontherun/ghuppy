@@ -17,6 +17,21 @@ struct GhuppyApp: App {
         // The title stays for the Window menu and Mission Control.
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
+            // The stock About panel, plus a link to the repository in its credits.
+            CommandGroup(replacing: .appInfo) {
+                Button("About Ghuppy") {
+                    let link = NSMutableAttributedString(string: "github.com/aleskiontherun/ghuppy")
+                    link.addAttributes(
+                        [.link: URL(string: "https://github.com/aleskiontherun/ghuppy")!,
+                         .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)],
+                        range: NSRange(location: 0, length: link.length))
+                    let centred = NSMutableParagraphStyle()
+                    centred.alignment = .center
+                    link.addAttribute(.paragraphStyle, value: centred,
+                                      range: NSRange(location: 0, length: link.length))
+                    NSApp.orderFrontStandardAboutPanel(options: [.credits: link])
+                }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New Tab") { tabs.newTab() }
                     .keyboardShortcut("t")
