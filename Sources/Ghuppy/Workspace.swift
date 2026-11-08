@@ -59,6 +59,10 @@ final class Workspace: Identifiable {
     /// How long, in seconds, a tab that comes back on screen goes without a
     /// refresh after the last one.
     private static let refreshedRecently: TimeInterval = 60
+    /// How often the tab on screen asks GitHub whether its pull requests
+    /// changed. Asking costs nothing while they haven't, and GitHub's answers
+    /// can be up to a minute old anyway.
+    private static let changeCheckInterval: Duration = .seconds(30)
 
     let id = UUID()
     var root: URL? {
@@ -125,6 +129,8 @@ final class Workspace: Identifiable {
     /// The cleanups and single-repository refreshes under way, for Stop All
     /// to reach.
     @ObservationIgnored private var cleanups: [UUID: Task<Void, Never>] = [:]
+    /// The look for changed pull requests under way, for Stop All to reach.
+    @ObservationIgnored private var changeCheck: Task<Void, Never>?
     /// When the last refresh started.
     @ObservationIgnored private var lastRefresh = Date.distantPast
     @ObservationIgnored var onSavedStateChange: (() -> Void)?
@@ -195,6 +201,37 @@ final class Workspace: Identifiable {
         guard !refreshSlot.isRunning, bulkActivity == nil,
               Date.now.timeIntervalSince(lastRefresh) >= Self.refreshedRecently else { return }
         refresh()
+    }
+
+    /// Reloads the pull requests that GitHub says changed, every so often for
+    /// as long as the calling task runs: the tab's view, while it's on
+    /// screen. Only the repositories Refresh acts on are looked at, and not
+    /// while anything else is bringing them up to date, nor after Stop All
+    /// until something starts again.
+    func watchPullRequests() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: Self.changeCheckInterval)
+            guard !Task.isCancelled, !stopped, !refreshSlot.isRunning, bulkActivity == nil, !scanning,
+                  changeCheck == nil else { continue }
+            let repos = scopedRepos.filter { $0.prsLoaded && $0.github != nil }
+            let check = Task {
+                await forEach(repos) { await self.reloadIfChanged($0) }
+            }
+            changeCheck = check
+            await withTaskCancellationHandler {
+                await check.value
+            } onCancel: {
+                check.cancel()
+            }
+            changeCheck = nil
+        }
+    }
+
+    private func reloadIfChanged(_ repo: RepoState) async {
+        guard let github = repo.github, !repo.loadingPRs, !repo.isRefreshing, repo.activity == nil,
+              (try? await PullRequestChanges.shared.check(github, cwd: repo.git.path)) == true,
+              !Task.isCancelled, !repo.loadingPRs, !repo.isRefreshing, repo.activity == nil else { return }
+        await refreshPRs(repo, checked: true)
     }
 
     /// Re-measures the working directory's size, each repository's share of
@@ -346,8 +383,12 @@ final class Workspace: Identifiable {
     }
 
     /// Reloads a repository's pull requests. A failure is logged when it
-    /// starts, not on every reload that goes on to meet it.
-    func refreshPRs(_ repo: RepoState) async {
+    /// starts, not on every reload that goes on to meet it. GitHub is asked
+    /// where they stand first, so `watchPullRequests` catches whatever
+    /// changes after the reload, unless `checked` says the caller has just
+    /// asked: the reload is then one `watchPullRequests` started, and
+    /// nothing shows it loading.
+    func refreshPRs(_ repo: RepoState, checked: Bool = false) async {
         // A git that was terminated leaves `github` nil, which isn't a
         // repository that has lost its remote.
         guard !Task.isCancelled else { return }
@@ -358,8 +399,12 @@ final class Workspace: Identifiable {
             repo.prsLoaded = true
             return
         }
-        repo.loadingPRs = true
-        defer { repo.loadingPRs = false }
+        if !checked {
+            repo.loadingPRs = true
+            // What it says doesn't matter: this reload is what's shown.
+            _ = try? await PullRequestChanges.shared.check(github, cwd: repo.git.path)
+        }
+        defer { if !checked { repo.loadingPRs = false } }
         do {
             var prs = try await PullRequests.open(in: github, cwd: repo.git.path)
             do {
@@ -423,8 +468,9 @@ final class Workspace: Identifiable {
     /// cancelled task can't start them again, so a cleanup deletes nothing
     /// more from here on. What it already deleted stays deleted.
     func stopAll() {
-        guard isRefreshing || measuringSize || !cleanups.isEmpty else { return }
+        guard isRefreshing || measuringSize || !cleanups.isEmpty || changeCheck != nil else { return }
         refreshSlot.cancel()
+        changeCheck?.cancel()
         cleanups.values.forEach { $0.cancel() }
         measurement?.cancel()
         remeasuring?.cancel()

@@ -55,6 +55,7 @@ struct WorkspaceView: View {
         // Each tab has a view of its own, so this runs on launch for the tab
         // selected then, and on switching to a tab.
         .task { model.refreshIfStale() }
+        .task { await model.watchPullRequests() }
     }
 
     private var directoryBar: some View {
