@@ -229,9 +229,9 @@ final class Workspace: Identifiable {
 
     private func reloadIfChanged(_ repo: RepoState) async {
         guard let github = repo.github, !repo.loadingPRs, !repo.isRefreshing, repo.activity == nil,
-              (try? await PullRequestChanges.shared.check(github, cwd: repo.git.path)) == true,
+              let look = try? await PullRequestChanges.shared.look(github, cwd: repo.git.path), look.changed,
               !Task.isCancelled, !repo.loadingPRs, !repo.isRefreshing, repo.activity == nil else { return }
-        await refreshPRs(repo, checked: true)
+        await refreshPRs(repo, after: look)
     }
 
     /// Re-measures the working directory's size, each repository's share of
@@ -385,10 +385,10 @@ final class Workspace: Identifiable {
     /// Reloads a repository's pull requests. A failure is logged when it
     /// starts, not on every reload that goes on to meet it. GitHub is asked
     /// where they stand first, so `watchPullRequests` catches whatever
-    /// changes after the reload, unless `checked` says the caller has just
-    /// asked: the reload is then one `watchPullRequests` started, and
-    /// nothing shows it loading.
-    func refreshPRs(_ repo: RepoState, checked: Bool = false) async {
+    /// changes after the reload, unless the caller has just asked and passes
+    /// what it saw as `look`: the reload is then one `watchPullRequests`
+    /// started, and nothing shows it loading.
+    func refreshPRs(_ repo: RepoState, after look: PullRequestChanges.Look? = nil) async {
         // A git that was terminated leaves `github` nil, which isn't a
         // repository that has lost its remote.
         guard !Task.isCancelled else { return }
@@ -399,14 +399,13 @@ final class Workspace: Identifiable {
             repo.prsLoaded = true
             return
         }
-        if !checked {
-            repo.loadingPRs = true
-            // What it says doesn't matter: this reload is what's shown.
-            _ = try? await PullRequestChanges.shared.check(github, cwd: repo.git.path)
-        }
-        defer { if !checked { repo.loadingPRs = false } }
-        // Whether a reload cut short is to be tried again by
-        // `watchPullRequests`, whose last look saw the change it missed.
+        let quiet = look != nil
+        if !quiet { repo.loadingPRs = true }
+        defer { if !quiet { repo.loadingPRs = false } }
+        // Whether it changed doesn't matter: this reload is what's shown.
+        let seen = if let look { look } else { try? await PullRequestChanges.shared.look(github, cwd: repo.git.path) }
+        // Whether a reload cut short is left for `watchPullRequests` to try
+        // again, by not remembering what the look saw.
         var retry = false
         do {
             var prs = try await PullRequests.open(in: github, cwd: repo.git.path)
@@ -439,7 +438,7 @@ final class Workspace: Identifiable {
             }
             repo.prError = error.localizedDescription
         }
-        if retry { await PullRequestChanges.shared.forget(github) }
+        if !retry, let seen { await PullRequestChanges.shared.remember(seen) }
     }
 
     // MARK: Actions

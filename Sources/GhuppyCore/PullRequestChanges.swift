@@ -15,7 +15,8 @@ import Foundation
 public actor PullRequestChanges {
     public static let shared = PullRequestChanges()
 
-    /// The ETag of the last answer to each URL.
+    /// The ETag of the last answer to each URL, by checkout: two clones of
+    /// one repository are each reloaded, and each has to see the change.
     private var tags: [String: String] = [:]
 
     public init() {}
@@ -28,32 +29,47 @@ public actor PullRequestChanges {
         ]
     }
 
-    /// Whether anything watched changed since the last call for `repo`, or
-    /// whether this is the first: either way, what's on screen may be out of
-    /// date. A URL GitHub doesn't answer counts as unchanged, so a failure
-    /// costs no reload. Throws `RateLimitError` while requests are paused,
-    /// and `CancellationError` when the calling task is cancelled.
-    @discardableResult
-    public func check(_ repo: GitHubRepo, cwd: URL) async throws -> Bool {
+    private static func key(_ url: String, in checkout: URL) -> String {
+        checkout.path + " " + url
+    }
+
+    /// What one look saw: whether anything changed since the answers last
+    /// remembered for the checkout, and the answers to remember once the
+    /// reload it calls for is done.
+    public struct Look: Sendable {
+        public let changed: Bool
+        let tags: [String: String]
+    }
+
+    /// Asks GitHub whether anything watched changed since what was last
+    /// remembered for the checkout at `cwd`, or whether nothing has been
+    /// yet: either way, what's on screen may be out of date. Nothing is
+    /// remembered until `remember`, so a look whose reload never happens
+    /// leaves the change to be seen again. A URL GitHub doesn't answer counts
+    /// as unchanged, so a failure costs no reload. Throws `RateLimitError`
+    /// while requests are paused, and `CancellationError` when the calling
+    /// task is cancelled.
+    public func look(_ repo: GitHubRepo, cwd: URL) async throws -> Look {
         var changed = false
+        var seen: [String: String] = [:]
         for url in Self.urls(for: repo) {
+            let key = Self.key(url, in: cwd)
             var args = ["api", "--include", "--jq", "type"]
-            if let tag = tags[url] { args += ["--header", "If-None-Match: \(tag)"] }
+            if let tag = tags[key] { args += ["--header", "If-None-Match: \(tag)"] }
             // A 304 is a failure to `gh`, which isn't worth retrying.
             let result = try await PullRequests.gh(args + [url], cwd: cwd, retryDelays: [])
             let response = Self.response(result.stdout)
             guard response.status == 200, let tag = response.etag else { continue }
-            if tags[url] != tag { changed = true }
-            tags[url] = tag
+            if tags[key] != tag { changed = true }
+            seen[key] = tag
         }
-        return changed
+        return Look(changed: changed, tags: seen)
     }
 
-    /// Drops what the last calls for `repo` saw, so the next call counts as
-    /// the first: for a reload the rate limit or a cancellation cut short,
-    /// whose change would otherwise have been seen and lost.
-    public func forget(_ repo: GitHubRepo) {
-        for url in Self.urls(for: repo) { tags[url] = nil }
+    /// Keeps what `look` saw, for the next look to be compared with: once the
+    /// pull requests it was taken before have been reloaded.
+    public func remember(_ look: Look) {
+        tags.merge(look.tags) { $1 }
     }
 
     /// The status code and ETag of what `gh api --include` printed: the
