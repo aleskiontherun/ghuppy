@@ -52,8 +52,8 @@ private struct Action: Identifiable {
 private struct ActionList: View {
     private static let groups: [(title: String, actions: [Action])] = [
         ("Repositories", [
-            Action(name: "Cleanup", description: "Prune, delete merged branches, pull", shortcut: "⌘G"),
-            Action(name: "Cleanup All", description: "The same, ignoring Pinned Only", shortcut: "⇧⌘G"),
+            Action(name: "Ghuppy!", description: "Prune, delete merged branches, pull", shortcut: "⌘G"),
+            Action(name: "Ghuppy ’em all!", description: "The same, ignoring Pinned Only", shortcut: "⇧⌘G"),
             Action(name: "Refresh", description: "Reload without fetching", shortcut: "⌘R"),
             Action(name: "Refresh All", description: "The same, ignoring Pinned Only", shortcut: "⇧⌘R"),
             Action(name: "Stop All", description: "Stop everything, in every tab", shortcut: "⌃C"),
@@ -64,7 +64,8 @@ private struct ActionList: View {
             Action(name: "Author", description: "Show one person's pull requests", shortcut: "⌘U"),
         ]),
         ("On a repository", [
-            Action(name: "Cleanup", description: "Clean up this repository alone"),
+            Action(name: "Ghuppy!", description: "Clean up this repository alone"),
+            Action(name: "Refresh", description: "Reload this repository alone"),
             Action(name: "Pin", description: "Keep it at the top of the list"),
         ]),
         ("Log", [

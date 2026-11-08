@@ -51,6 +51,28 @@ struct RepoCard: View {
         .tooltip(pinned ? "Unpin" : "Pin to the top")
     }
 
+    /// Not disabled while it turns, which would dim it, but while the
+    /// repository is being cleaned up, when only the Ghuppy! icon turns.
+    private var refreshButton: some View {
+        Button {
+            model.startRefresh(of: repo)
+        } label: {
+            Group {
+                if repo.isRefreshing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .foregroundStyle(Color.secondary)
+                }
+            }
+            .frame(width: 16, height: 16)
+        }
+        .buttonStyle(.hoverHighlight)
+        .disabled(repo.activity != nil || !model.canAct)
+        .accessibilityLabel("Refresh")
+        .tooltip("Refresh this repository")
+    }
+
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
@@ -95,8 +117,9 @@ struct RepoCard: View {
                         .foregroundStyle(Color.primary)
                 }
                 .buttonStyle(.hoverHighlight)
-                .accessibilityLabel("Cleanup")
+                .accessibilityLabel("Ghuppy!")
                 .tooltip(model.dryRun ? "Dry run this repository" : "Clean up this repository")
+                refreshButton
                 pinButton
             }
             // Level with the middle of the title beside them.

@@ -8,15 +8,15 @@ to each one on GitHub and its pull requests underneath: the ones ready to
 merge, then the other open ones, then the ones in the merge queue, then the
 last 3 merged, the last merged first.
 
-- **Cleanup** — `git fetch --prune`, then delete local branches whose work has
+- **Ghuppy!** — `git fetch --prune`, then delete local branches whose work has
   actually landed and the worktrees left behind with them, then a
   fast-forward-only pull of the default branch, then reload the pull request
   list. Only the default branch is ever pulled: a checkout that stays on
-  another branch, because that branch is kept, is left as it is. Cleanup shows
-  how many commits the pull brought in, and Cleanup all shows the total. A
+  another branch, because that branch is kept, is left as it is. Ghuppy! shows
+  how many commits the pull brought in, and Ghuppy ’em all! shows the total. A
   fetch that loses a race with another git fetching the same repository (an
   IDE, say) is retried.
-- **Cleanup all** (the fish in the toolbar, or ⌘G) first rescans the
+- **Ghuppy ’em all!** (the fish in the toolbar, or ⌘G) first rescans the
   working directory, so repositories added or deleted since the last look join
   or leave the list, then cleans them up, a few at a time: only the pinned ones
   while Pinned only is on, unless ⇧⌘G asks for every one.
@@ -34,16 +34,19 @@ It also follows whatever else is writing to the disk: the free space is
 re-read every second, and the sizes are measured again a few seconds after
 anything under the working directory changes, and at most every few seconds
 while it keeps changing, and the worktrees and branches counted again with them.
-Cleanup logs the space it freed: the size of each worktree it removed.
+Ghuppy! logs the space it freed: the size of each worktree it removed.
 
 Drag the divider above the log to resize it. The height is saved, and shared
 by every tab.
 
 **Refresh** (⌘R, or the button in the toolbar) brings the tab on screen up to
 date without fetching: it rescans the working directory, reloads the
-repositories' status and pull requests, and measures the disk again. The
-button turns into a spinner for as long as anything is being reloaded, and
-pressing it again starts over, cancelling the refresh under way. A tab also
+repositories’ status and pull requests, and measures the disk again. The
+button turns into a spinner for as long as the refresh runs, but stays still
+during a Ghuppy ’em all!, whose fish turns instead, and pressing it again
+starts over, cancelling the refresh under way. The refresh button on a
+repository reloads that one alone, and turns while it’s being refreshed,
+but not while it’s being cleaned up. A tab also
 refreshes when Ghuppy launches with it selected, and on coming back to it from
 another tab or another app, once a minute has passed since its last refresh.
 
@@ -51,7 +54,7 @@ When GitHub's rate limit stops a request, Ghuppy stops sending any until the
 limit lifts: until the quota resets if it ran out, and otherwise for a minute,
 twice as long each time it happens again in a row, up to half an hour. The
 status bar shows the time requests resume, and the pull requests on screen
-stay as they were. Cleanup carries on meanwhile, and keeps any branch whose
+stay as they were. Ghuppy! carries on meanwhile, and keeps any branch whose
 pull request it can't check.
 
 A pull request shows one label, the first of these that applies: **Merged**,
@@ -80,17 +83,17 @@ merged.
 
 Pin a repository (the pin button, or right-click) to keep it at the top of
 the list. Pins are saved, and shared by every tab that lists the repository.
-Turn on the **pin button in the toolbar** (⌘P) to have Cleanup (⌘G) and Refresh
+Turn on the **pin button in the toolbar** (⌘P) to have Ghuppy! (⌘G) and Refresh
 (⌘R) act on the pinned repositories alone, though every repository still loads
-the first time. Cleanup All (⇧⌘G) and Refresh All (⇧⌘R) cover every repository
+the first time. Ghuppy ’em all! (⇧⌘G) and Refresh All (⇧⌘R) cover every repository
 either way. Each tab remembers its own setting, across launches too.
 
 The **Author** select narrows the pull requests on screen to one person's,
 out of everyone with a pull request listed; every repository stays in the list.
-It only changes what is shown: Cleanup all acts as before. Each tab remembers
+It only changes what is shown: Ghuppy ’em all! acts as before. Each tab remembers
 its own choice, across launches too, until its working directory changes.
 
-## What Cleanup deletes
+## What Ghuppy! deletes
 
 A branch marked `[gone]` (its remote branch was deleted) is only a candidate:
 that alone doesn't mean it was merged. For each candidate Ghuppy asks
@@ -120,7 +123,7 @@ default branch is removed. Nothing is ever removed with `--force`. A locked
 worktree, or one with uncommitted work, is kept and named in the log, and so
 is its branch.
 
-Turn on **Dry run**, the flask in the toolbar (⇧⌘D), to see what Cleanup would do
+Turn on **Dry run**, the flask in the toolbar (⇧⌘D), to see what Ghuppy! would do
 without changing anything.
 
 ## Tabs
