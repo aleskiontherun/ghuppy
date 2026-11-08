@@ -49,6 +49,13 @@ public actor PullRequestChanges {
         return changed
     }
 
+    /// Drops what the last calls for `repo` saw, so the next call counts as
+    /// the first: for a reload that didn't get through, whose change would
+    /// otherwise have been seen and lost.
+    public func forget(_ repo: GitHubRepo) {
+        for url in Self.urls(for: repo) { tags[url] = nil }
+    }
+
     /// The status code and ETag of what `gh api --include` printed: the
     /// status line, then the headers, a blank line and the body, the headers
     /// ending in `\r\n`, which Swift counts as one character. GitHub marks

@@ -206,12 +206,12 @@ final class Workspace: Identifiable {
     /// Reloads the pull requests that GitHub says changed, every so often for
     /// as long as the calling task runs: the tab's view, while it's on
     /// screen. Only the repositories Refresh acts on are looked at, and not
-    /// while anything else is bringing them up to date, nor after Stop All
-    /// until something starts again.
+    /// while anything else is bringing them up to date. Stop All stops the
+    /// look under way, not the ones to come.
     func watchPullRequests() async {
         while !Task.isCancelled {
             try? await Task.sleep(for: Self.changeCheckInterval)
-            guard !Task.isCancelled, !stopped, !refreshSlot.isRunning, bulkActivity == nil, !scanning,
+            guard !Task.isCancelled, !refreshSlot.isRunning, bulkActivity == nil, !scanning,
                   changeCheck == nil else { continue }
             let repos = scopedRepos.filter { $0.prsLoaded && $0.github != nil }
             let check = Task {
@@ -405,6 +405,7 @@ final class Workspace: Identifiable {
             _ = try? await PullRequestChanges.shared.check(github, cwd: repo.git.path)
         }
         defer { if !checked { repo.loadingPRs = false } }
+        var loaded = false
         do {
             var prs = try await PullRequests.open(in: github, cwd: repo.git.path)
             do {
@@ -412,6 +413,7 @@ final class Workspace: Identifiable {
                 prs = PullRequests.applying(queue: extras.queue, awaitingApproval: extras.awaitingApproval, to: prs)
                 repo.mergedPullRequests = extras.merged
                 repo.extrasError = nil
+                loaded = true
             } catch let error where !(error is RateLimitError || error is CancellationError) {
                 if repo.extrasError != error.localizedDescription {
                     append(repo.name, error.localizedDescription, isError: true)
@@ -432,6 +434,9 @@ final class Workspace: Identifiable {
             }
             repo.prError = error.localizedDescription
         }
+        // Unless all of it loaded, GitHub is asked afresh next time, and the
+        // reload tried again.
+        if !loaded { await PullRequestChanges.shared.forget(github) }
     }
 
     // MARK: Actions
