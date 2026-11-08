@@ -25,6 +25,10 @@ final class RepoState: Identifiable {
     /// once they load again.
     var extrasError: String?
     var loadingPRs = false
+    /// How many refreshes are reloading the repository right now: the tab's
+    /// and its own. A cleanup's reload isn't counted.
+    var refreshes = 0
+    var isRefreshing: Bool { refreshes > 0 }
     /// Whether the open pull requests have loaded at least once, which tells
     /// an empty list from one still to come, or that there are none to load.
     /// Later reloads stay out of sight. Even a refresh of only the pinned
@@ -80,6 +84,9 @@ final class Workspace: Identifiable {
     var isRefreshing: Bool {
         refreshSlot.isRunning || bulkActivity != nil || scanning || repos.contains(where: \.loadingPRs)
     }
+    /// Whether the Refresh button turns: while a refresh runs, but not
+    /// beside a Ghuppy ’em all!, whose icon turns instead.
+    var refreshSpinning: Bool { refreshSlot.isRunning && bulkActivity == nil }
     /// Whether Cleanup and Refresh act on the pinned repositories only.
     var pinnedOnly: Bool {
         didSet { onSavedStateChange?() }
@@ -115,7 +122,8 @@ final class Workspace: Identifiable {
     private let refreshSlot = RefreshSlot()
     /// Whether Stop All was the last word: what's on screen may be partial.
     private(set) var stopped = false
-    /// The cleanups under way, for Stop All to reach.
+    /// The cleanups and single-repository refreshes under way, for Stop All
+    /// to reach.
     @ObservationIgnored private var cleanups: [UUID: Task<Void, Never>] = [:]
     /// When the last refresh started.
     @ObservationIgnored private var lastRefresh = Date.distantPast
@@ -169,10 +177,7 @@ final class Workspace: Identifiable {
             let repos = orderedRepos.filter {
                 includingUnpinned || !pinnedOnly || !$0.prsLoaded || pins.isPinned($0.git.path)
             }
-            await forEach(repos) { repo in
-                await self.refreshLocal(repo)
-                await self.refreshPRs(repo)
-            }
+            await forEach(repos) { await self.reload($0) }
             let measuring = measurement
             await withTaskCancellationHandler {
                 await measuring?.value
@@ -332,6 +337,14 @@ final class Workspace: Identifiable {
         repo.status = status
     }
 
+    /// Reloads a repository's status and pull requests, for a refresh.
+    private func reload(_ repo: RepoState) async {
+        repo.refreshes += 1
+        defer { repo.refreshes -= 1 }
+        await refreshLocal(repo)
+        await refreshPRs(repo)
+    }
+
     /// Reloads a repository's pull requests. A failure is logged when it
     /// starts, not on every reload that goes on to meet it.
     func refreshPRs(_ repo: RepoState) async {
@@ -378,6 +391,14 @@ final class Workspace: Identifiable {
 
     // MARK: Actions
 
+    /// Starts refreshing one repository, for Stop All to be able to stop. It
+    /// waits for one already reloading it to finish, and does nothing while
+    /// it's being cleaned up.
+    func startRefresh(of repo: RepoState) {
+        guard !repo.isRefreshing, repo.activity == nil else { return }
+        track { await self.reload(repo) }
+    }
+
     /// Starts `cleanupAll`, for Stop All to be able to stop.
     func startCleanupAll(includingUnpinned: Bool = false) {
         track { await self.cleanupAll(includingUnpinned: includingUnpinned) }
@@ -417,7 +438,7 @@ final class Workspace: Identifiable {
     private func cleanupAll(includingUnpinned: Bool = false) async {
         guard bulkActivity == nil else { return }
         let dryRun = dryRun
-        bulkActivity = dryRun ? "Cleaning up (dry run)…" : "Cleaning up…"
+        bulkActivity = dryRun ? "Ghuppying (dry run)…" : "Ghuppying…"
         defer { bulkActivity = nil }
         // Let a discovery already in flight (the first one, on opening the
         // tab) finish, then look again so the list is current.
@@ -429,24 +450,24 @@ final class Workspace: Identifiable {
         await discover()
         await forEach(includingUnpinned ? orderedRepos : scopedRepos) { await self.cleanup($0, dryRun: dryRun) }
         guard !Task.isCancelled else { return }
-        append(nil, dryRun ? "Cleanup all finished (dry run, nothing deleted or pulled)"
-                           : "Cleanup all finished, pulled \(GitRepo.commits(pulledByCleanupAll)), "
+        append(nil, dryRun ? "Ghuppied ’em all! (dry run, nothing deleted or pulled)"
+                           : "Ghuppied ’em all! Pulled \(GitRepo.commits(pulledByCleanupAll)), "
                                + "freed \(Self.bytes(freedByCleanupAll))")
         measureDisk()
     }
 
     private func cleanup(_ repo: RepoState, dryRun: Bool) async {
-        await perform(dryRun ? "Cleaning up (dry run)…" : "Cleaning up…", on: repo) {
+        await perform(dryRun ? "Ghuppying (dry run)…" : "Ghuppying…", on: repo) {
             let outcome = try await Cleanup(repo: repo.git, dryRun: dryRun).run(log: self.logger(for: repo))
-            if dryRun { return "Cleanup dry run done" }
+            if dryRun { return "Ghuppied! (dry run)" }
             self.pulledByCleanupAll += outcome.pulled
             self.freedByCleanupAll += outcome.freed
             let freed = Self.bytes(outcome.freed)
             // Cleanup all sums them up, so only the repositories that freed something get a line.
             if outcome.freed > 0 || self.bulkActivity == nil { self.append(repo.name, "freed \(freed)") }
             if let failure = outcome.pullFailure { throw failure }
-            return outcome.pulled == 0 ? "Cleaned up, freed \(freed)"
-                                       : "Cleaned up, pulled \(GitRepo.commits(outcome.pulled)), freed \(freed)"
+            return outcome.pulled == 0 ? "Ghuppied! Freed \(freed)"
+                                       : "Ghuppied! Pulled \(GitRepo.commits(outcome.pulled)), freed \(freed)"
         }
         await refreshPRs(repo)
         // A bulk action measures once, when it's done. The whole working

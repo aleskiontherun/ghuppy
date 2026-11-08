@@ -11,7 +11,7 @@ struct GhuppyApp: App {
         Window("Ghuppy", id: "main") {
             ContentView()
                 .environment(tabs)
-                .frame(minWidth: 640, minHeight: 480)
+                .frame(minWidth: 760, minHeight: 480)
         }
         .defaultSize(width: 900, height: 760)
         // The title stays for the Window menu and Mission Control.
@@ -48,9 +48,9 @@ struct GhuppyApp: App {
             CommandMenu("Repositories") {
                 // The actions look up the tab when they run: a shortcut can
                 // fire an action built while another tab was selected.
-                Button("Cleanup") { tabs.selected.startCleanupAll() }
+                Button("Ghuppy!") { tabs.selected.startCleanupAll() }
                     .keyboardShortcut("g")
-                Button("Cleanup All") { tabs.selected.startCleanupAll(includingUnpinned: true) }
+                Button("Ghuppy ’em all!") { tabs.selected.startCleanupAll(includingUnpinned: true) }
                     .keyboardShortcut("g", modifiers: [.command, .shift])
                 Group {
                     Toggle("Pinned Only", isOn: Binding(

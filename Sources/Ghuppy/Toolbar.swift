@@ -22,10 +22,10 @@ struct WorkspaceToolbar: ToolbarContent {
             // Not disabled while it runs, which would dim the animation:
             // starting another does nothing while one is running.
             .disabled(workspace.root == nil)
-            .accessibilityLabel("Cleanup")
+            .accessibilityLabel("Ghuppy!")
             .tooltip([
-                TooltipLine(text: "Clean up", shortcut: "⌘G"),
-                TooltipLine(text: "Clean up all", shortcut: "⇧⌘G"),
+                TooltipLine(text: "Ghuppy!", shortcut: "⌘G"),
+                TooltipLine(text: "Ghuppy ’em all!", shortcut: "⇧⌘G"),
             ])
         }
         ToolbarItem(placement: .navigation) {
@@ -33,7 +33,7 @@ struct WorkspaceToolbar: ToolbarContent {
                 workspace.refresh()
             } label: {
                 ShortcutHint("⌘R") {
-                    if workspace.isRefreshing {
+                    if workspace.refreshSpinning {
                         ProgressView().controlSize(.small).scaleEffect(1.25)
                     } else {
                         Image(systemName: "arrow.clockwise")
@@ -113,9 +113,11 @@ private struct ToolbarToggle: View {
         Button {
             isOn.toggle()
         } label: {
-            Image(systemName: isOn && fills ? symbol + ".fill" : symbol)
-                .imageScale(.large)
-                .foregroundStyle(isOn ? Color.primary : Color.muted)
+            ShortcutHint(shortcut) {
+                Image(systemName: isOn && fills ? symbol + ".fill" : symbol)
+                    .imageScale(.large)
+                    .foregroundStyle(isOn ? Color.primary : Color.muted)
+            }
         }
         .buttonStyle(.hoverHighlight)
         .accessibilityLabel(name)
@@ -133,8 +135,24 @@ private struct AuthorMenu: View {
     @State private var anchor = PassthroughView()
 
     var body: some View {
+        HStack(spacing: 8) {
+            menu
+            // Beside the menu, which would leave it out of its label.
+            Text("⌘U")
+                .font(.title3)
+                .foregroundStyle(Color.muted)
+                .contentShape(Rectangle())
+                .onTapGesture { AuthorPopUp(workspace: workspace).show(from: anchor) }
+        }
+        .onChange(of: requests) {
+            guard workspace.canAct else { return }
+            AuthorPopUp(workspace: workspace).show(from: anchor)
+        }
+    }
+
+    private var menu: some View {
         let authors = workspace.authors
-        Menu {
+        return Menu {
             Picker("Author", selection: $workspace.authorFilter) {
                 Label { Text("Everyone") } icon: { Avatars.shared.image(for: nil) }
                     .tag(String?.none)
@@ -156,10 +174,6 @@ private struct AuthorMenu: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .background(HostedView(view: anchor))
-        .onChange(of: requests) {
-            guard workspace.canAct else { return }
-            AuthorPopUp(workspace: workspace).show(from: anchor)
-        }
         .task(id: authors) { Avatars.shared.load(authors) }
     }
 }
