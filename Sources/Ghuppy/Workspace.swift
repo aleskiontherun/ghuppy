@@ -405,7 +405,9 @@ final class Workspace: Identifiable {
             _ = try? await PullRequestChanges.shared.check(github, cwd: repo.git.path)
         }
         defer { if !checked { repo.loadingPRs = false } }
-        var loaded = false
+        // Whether a reload cut short is to be tried again by
+        // `watchPullRequests`, whose last look saw the change it missed.
+        var retry = false
         do {
             var prs = try await PullRequests.open(in: github, cwd: repo.git.path)
             do {
@@ -413,7 +415,6 @@ final class Workspace: Identifiable {
                 prs = PullRequests.applying(queue: extras.queue, awaitingApproval: extras.awaitingApproval, to: prs)
                 repo.mergedPullRequests = extras.merged
                 repo.extrasError = nil
-                loaded = true
             } catch let error where !(error is RateLimitError || error is CancellationError) {
                 if repo.extrasError != error.localizedDescription {
                     append(repo.name, error.localizedDescription, isError: true)
@@ -426,17 +427,19 @@ final class Workspace: Identifiable {
         } catch is RateLimitError {
             // The status bar says so, once for every repository, and what's
             // on screen stays until a reload gets through.
+            retry = true
         } catch is CancellationError {
             // The refresh taking over reloads it.
+            retry = true
         } catch {
+            // Not retried: a failure that lasts would reload every time. It's
+            // on the card, and Refresh tries again.
             if repo.prError != error.localizedDescription {
                 append(repo.name, "pull requests: \(error.localizedDescription)", isError: true)
             }
             repo.prError = error.localizedDescription
         }
-        // Unless all of it loaded, GitHub is asked afresh next time, and the
-        // reload tried again.
-        if !loaded { await PullRequestChanges.shared.forget(github) }
+        if retry { await PullRequestChanges.shared.forget(github) }
     }
 
     // MARK: Actions

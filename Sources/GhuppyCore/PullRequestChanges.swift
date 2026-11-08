@@ -50,8 +50,8 @@ public actor PullRequestChanges {
     }
 
     /// Drops what the last calls for `repo` saw, so the next call counts as
-    /// the first: for a reload that didn't get through, whose change would
-    /// otherwise have been seen and lost.
+    /// the first: for a reload the rate limit or a cancellation cut short,
+    /// whose change would otherwise have been seen and lost.
     public func forget(_ repo: GitHubRepo) {
         for url in Self.urls(for: repo) { tags[url] = nil }
     }
