@@ -20,7 +20,6 @@ struct PRRow: View {
                         .truncationMode(.tail)
                 }
             }
-            .tooltip(pr.url.absoluteString)
 
             Spacer(minLength: 8)
 
