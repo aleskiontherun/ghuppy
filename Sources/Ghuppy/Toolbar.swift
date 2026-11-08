@@ -13,8 +13,8 @@ struct WorkspaceToolbar: ToolbarContent {
             Button {
                 workspace.startCleanupAll()
             } label: {
-                ShortcutHint("⌘G") {
-                    TriangleSpinner(animating: workspace.bulkActivity != nil)
+                ShortcutHint("⌘G", iconWidth: 24) {
+                    FishSpinner(animating: workspace.bulkActivity != nil)
                         .foregroundStyle(Color.primary)
                 }
             }
@@ -81,16 +81,18 @@ struct WorkspaceToolbar: ToolbarContent {
 /// An icon with its shortcut beside it, muted.
 private struct ShortcutHint<Icon: View>: View {
     let shortcut: String
+    var iconWidth = 20.0
     @ViewBuilder let icon: Icon
 
-    init(_ shortcut: String, @ViewBuilder icon: () -> Icon) {
+    init(_ shortcut: String, iconWidth: Double = 20, @ViewBuilder icon: () -> Icon) {
         self.shortcut = shortcut
+        self.iconWidth = iconWidth
         self.icon = icon()
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            icon.frame(width: 20, height: 20)
+            icon.frame(width: iconWidth, height: 20)
             Text(shortcut)
                 .font(.title3)
                 .foregroundStyle(Color.muted)
