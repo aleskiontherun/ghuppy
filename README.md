@@ -123,6 +123,58 @@ is its branch.
 Turn on **Dry run**, the flask in the toolbar (⇧⌘D), to see what Cleanup would do
 without changing anything.
 
+## How Refresh and Cleanup run
+
+A refresh runs in one slot per tab: starting one cancels the one under way and
+waits for it to unwind, so two never write over each other. It never fetches.
+
+```mermaid
+flowchart TD
+    R["Refresh (⌘R)<br/>pinned-only scope"] --> S
+    RA["Refresh all (⇧⌘R)<br/>includes unpinned"] --> S
+    T["Tab comes on screen<br/>launch, switch, activate"] --> G{"refreshIfStale<br/>idle, no cleanup, ≥60s?"}
+    G -- yes --> S
+    S["RefreshSlot.start<br/>cancel the running job, wait for it"] --> D["Discover repositories<br/>rescan the root, no fetch"]
+    D --> E["Each repository, 6 at once<br/>refreshLocal, then refreshPRs"]
+    D -.-> M["Measure disk<br/>off the main actor"]
+    E --> W["Await the measurement<br/>then the spinner stops"]
+    M -.-> W
+```
+
+Cleanup is the one that talks to the remote. Each run is tracked on its own,
+so ⌃C can stop it.
+
+```mermaid
+flowchart TD
+    C["Cleanup / Cleanup all (⌘G / ⇧⌘G)"] --> WD["Wait for discovery, then discover again"]
+    WD --> F["Each repository, 6 at once<br/>dry run read once"]
+    F --> CR["cleanup(repo)<br/>also the repository's own button"]
+    subgraph run ["Cleanup.run"]
+        direction TB
+        P1["git fetch --prune<br/>retried if refs are locked"] --> P2["git worktree prune"]
+        P2 --> P3["Judge each branch<br/>[gone] ones and the checked-out one"]
+        P3 --> P4["Detached worktrees<br/>removed only if HEAD is in the default branch"]
+        P4 --> P5["Fast-forward the default branch<br/>only if the checkout ends on it"]
+    end
+    CR --> P1
+    P5 --> RL["Reload pull requests and status<br/>log pulled and freed"]
+    RL --> MD["Measure the disk once<br/>after the last repository"]
+```
+
+How a `[gone]` branch is judged:
+
+```mermaid
+flowchart TD
+    B["[gone] branch"] --> PR{"PR state on GitHub?"}
+    PR -- merged --> D1["Delete"]
+    PR -- "open, or lookup failed" --> K1["Keep"]
+    PR -- none --> A{"Commits in the default branch?<br/>merge-base --is-ancestor"}
+    A -- yes --> D2["Delete"]
+    A -- no --> SQ{"Equal squashed patch?<br/>commit-tree + git cherry"}
+    SQ -- yes --> D3["Delete"]
+    SQ -- no --> K2["Keep, review manually"]
+```
+
 ## Tabs
 
 **+** next to the tabs (⌘T) opens a new tab for another working directory.
