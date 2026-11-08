@@ -37,7 +37,7 @@ private struct TooltipAnchor: NSViewRepresentable {
 /// Sits behind the view with the tooltip and watches the pointer. A tracking
 /// area reports it even with other views on top, and clicks pass through.
 private final class TooltipAnchorView: NSView {
-    private static let delay = Duration.milliseconds(500)
+    private static let delay = Duration.seconds(1)
 
     var lines: [TooltipLine] = []
     private var waiting: Task<Void, Never>?
@@ -103,10 +103,16 @@ private final class TooltipPanel {
         panel.level = .statusBar
         panel.ignoresMouseEvents = true
         panel.contentView = host
+        // The panel floats above every app, so it goes when Ghuppy does.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.hide() }
+        }
     }
 
     func show(_ lines: [TooltipLine], for view: NSView) {
-        guard let window = view.window, !lines.isEmpty else { return }
+        guard NSApp.isActive, let window = view.window, !lines.isEmpty else { return }
         let textWidth = lines.map { TooltipLabel.width(of: $0.text) }.max() ?? 0
         host.rootView = TooltipLabel(lines: lines, textWidth: textWidth)
         let size = host.fittingSize
