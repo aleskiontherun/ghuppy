@@ -34,7 +34,7 @@ It also follows whatever else is writing to the disk: the free space is
 re-read every second, and the sizes are measured again a few seconds after
 anything under the working directory changes, and at most every few seconds
 while it keeps changing, and the worktrees and branches counted again with them.
-Cleanup logs the space it freed: the size of each worktree it removed.
+Ghuppy! logs the space it freed: the size of each worktree it removed.
 
 Drag the divider above the log to resize it. The height is saved, and shared
 by every tab.
@@ -54,7 +54,7 @@ When GitHub's rate limit stops a request, Ghuppy stops sending any until the
 limit lifts: until the quota resets if it ran out, and otherwise for a minute,
 twice as long each time it happens again in a row, up to half an hour. The
 status bar shows the time requests resume, and the pull requests on screen
-stay as they were. Cleanup carries on meanwhile, and keeps any branch whose
+stay as they were. Ghuppy! carries on meanwhile, and keeps any branch whose
 pull request it can't check.
 
 A pull request shows one label, the first of these that applies: **Merged**,
@@ -83,17 +83,17 @@ merged.
 
 Pin a repository (the pin button, or right-click) to keep it at the top of
 the list. Pins are saved, and shared by every tab that lists the repository.
-Turn on the **pin button in the toolbar** (⌘P) to have Cleanup (⌘G) and Refresh
+Turn on the **pin button in the toolbar** (⌘P) to have Ghuppy! (⌘G) and Refresh
 (⌘R) act on the pinned repositories alone, though every repository still loads
-the first time. Cleanup All (⇧⌘G) and Refresh All (⇧⌘R) cover every repository
+the first time. Ghuppy ’em all! (⇧⌘G) and Refresh All (⇧⌘R) cover every repository
 either way. Each tab remembers its own setting, across launches too.
 
 The **Author** select narrows the pull requests on screen to one person's,
 out of everyone with a pull request listed; every repository stays in the list.
-It only changes what is shown: Cleanup all acts as before. Each tab remembers
+It only changes what is shown: Ghuppy ’em all! acts as before. Each tab remembers
 its own choice, across launches too, until its working directory changes.
 
-## What Cleanup deletes
+## What Ghuppy! deletes
 
 A branch marked `[gone]` (its remote branch was deleted) is only a candidate:
 that alone doesn't mean it was merged. For each candidate Ghuppy asks
@@ -123,7 +123,7 @@ default branch is removed. Nothing is ever removed with `--force`. A locked
 worktree, or one with uncommitted work, is kept and named in the log, and so
 is its branch.
 
-Turn on **Dry run**, the flask in the toolbar (⇧⌘D), to see what Cleanup would do
+Turn on **Dry run**, the flask in the toolbar (⇧⌘D), to see what Ghuppy! would do
 without changing anything.
 
 ## Tabs

@@ -392,8 +392,8 @@ final class Workspace: Identifiable {
     // MARK: Actions
 
     /// Starts refreshing one repository, for Stop All to be able to stop. It
-    /// waits for one already reloading it to finish, and does nothing while
-    /// it's being cleaned up.
+    /// does nothing while the repository is already being refreshed or
+    /// cleaned up.
     func startRefresh(of repo: RepoState) {
         guard !repo.isRefreshing, repo.activity == nil else { return }
         track { await self.reload(repo) }
