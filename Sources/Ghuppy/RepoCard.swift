@@ -114,7 +114,7 @@ struct RepoCard: View {
                 } label: {
                     FishSpinner(animating: repo.activity != nil)
                         .controlSize(.small)
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Color.secondary)
                 }
                 .buttonStyle(.hoverHighlight)
                 .accessibilityLabel("Ghuppy!")
