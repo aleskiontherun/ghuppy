@@ -59,6 +59,12 @@ final class Workspace: Identifiable {
     /// How long, in seconds, a tab that comes back on screen goes without a
     /// refresh after the last one.
     private static let refreshedRecently: TimeInterval = 60
+    /// How long, in seconds, the tree stays quiet before the repositories
+    /// are discovered again: long enough for a clone to finish, so its card
+    /// doesn't load half a repository.
+    private static let treeSettles: TimeInterval = 3
+    /// How long, in seconds, a tree that never goes quiet is waited for.
+    private static let treeSettlesAtMost: TimeInterval = 30
     /// How often the tab on screen asks GitHub whether its pull requests
     /// changed. Asking costs nothing while they haven't, and GitHub's answers
     /// can be up to a minute old anyway.
@@ -123,6 +129,16 @@ final class Workspace: Identifiable {
     /// measuring them again while they are.
     @ObservationIgnored private var sizesStale = false
     @ObservationIgnored private var remeasuring: Task<Void, Never>?
+    /// What the last discovery found and left out, which tells the changes
+    /// that could add or remove a repository from the rest.
+    @ObservationIgnored private var lastScan = Discovery.Scan()
+    /// Whether the list is known to be behind the disk, and the loop
+    /// discovering again while it is.
+    @ObservationIgnored private var reposStale = false
+    @ObservationIgnored private var rediscovering: Task<Void, Never>?
+    @ObservationIgnored private var rediscoveringID: UUID?
+    /// When a change that could add or remove a repository last came.
+    @ObservationIgnored private var lastTreeChange = Date.distantPast
     private let refreshSlot = RefreshSlot()
     /// Whether Stop All was the last word: what's on screen may be partial.
     private(set) var stopped = false
@@ -176,7 +192,12 @@ final class Workspace: Identifiable {
         guard root != nil else { return }
         stopped = false
         lastRefresh = .now
+        // It discovers anyway, and mustn't find a discovery in its way.
+        stopRediscovering()
         refreshSlot.start { [self] in
+            while scanning, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
             guard await discover() else { return }
             measureDisk()
             let pins = Pins.shared
@@ -279,8 +300,11 @@ final class Workspace: Identifiable {
 
     private func watchForChanges(in root: URL) {
         guard watcher?.root != root else { return }
-        watcher = DirectoryWatcher(directory: root) { [weak self] in
-            Task { @MainActor in self?.diskChanged() }
+        watcher = DirectoryWatcher(directory: root) { [weak self] paths in
+            Task { @MainActor in
+                self?.diskChanged()
+                self?.treeChanged(paths)
+            }
         }.map { (root, $0) }
     }
 
@@ -303,6 +327,64 @@ final class Workspace: Identifiable {
             }
             remeasuring = nil
         }
+    }
+
+    /// Some directories under the working directory changed. When one of
+    /// them lies outside every repository and gained or lost a folder, or
+    /// became a repository, a clone may have arrived or a repository gone,
+    /// so the list is discovered again once such changes
+    /// settle, and then at most every few seconds however busy the tree is.
+    /// A refresh or a cleanup discovers on its own, so it goes first and
+    /// this looks again after it. Changes inside the repositories, which are
+    /// nearly all of them, cost nothing more than the check.
+    private func treeChanged(_ paths: [String]) {
+        guard let root, Discovery.couldChange(lastScan, under: root, paths: paths) else { return }
+        reposStale = true
+        lastTreeChange = .now
+        guard rediscovering == nil else { return }
+        let id = UUID()
+        rediscoveringID = id
+        rediscovering = Task {
+            defer { if rediscoveringID == id { rediscovering = nil } }
+            while reposStale && !Task.isCancelled {
+                // A clone writes into a folder that isn't a checkout yet,
+                // so its changes keep coming until it's done.
+                let waiting = Date.now
+                while !Task.isCancelled,
+                      Date.now.timeIntervalSince(lastTreeChange) < Self.treeSettles,
+                      Date.now.timeIntervalSince(waiting) < Self.treeSettlesAtMost {
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+                while scanning || refreshSlot.isRunning || bulkActivity != nil, !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+                guard !Task.isCancelled else { return }
+                reposStale = false
+                await rediscover()
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+    }
+
+    /// Stops the discovery the tree's changes started, and forgets them,
+    /// for a refresh that discovers anyway or Stop All.
+    private func stopRediscovering() {
+        rediscovering?.cancel()
+        rediscovering = nil
+        rediscoveringID = nil
+        reposStale = false
+    }
+
+    /// Discovers the repositories again and loads the ones that are new,
+    /// leaving the rest as they are.
+    private func rediscover() async {
+        let known = Set(repos.map(\.git.path))
+        guard await discover() else { return }
+        let added = repos.filter { !known.contains($0.git.path) }
+        guard !added.isEmpty else { return }
+        await forEach(added) { await self.reload($0) }
+        // Their share of the working directory's size.
+        if !Task.isCancelled { measureDisk() }
     }
 
     /// Re-reads the free space beside the working directory, for the status
@@ -337,9 +419,11 @@ final class Workspace: Identifiable {
         scanning = true
         defer { scanning = false }
 
-        let paths = await Discovery.repositories(under: root)
+        let scan = await Discovery.scan(under: root, knownMain: Set(repos.map(\.git.path)))
+        let paths = scan.repositories
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-        guard !Task.isCancelled else { return false }
+        guard !Task.isCancelled, root == self.root else { return false }
+        lastScan = scan
         let hadList = !repos.isEmpty
         let existing = Dictionary(uniqueKeysWithValues: repos.map { ($0.git.path, $0) })
         let updated = paths.map { path in
@@ -481,6 +565,7 @@ final class Workspace: Identifiable {
         cleanups.values.forEach { $0.cancel() }
         measurement?.cancel()
         remeasuring?.cancel()
+        stopRediscovering()
         stopped = true
         append(nil, "Stopped")
     }

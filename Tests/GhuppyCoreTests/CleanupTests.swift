@@ -497,4 +497,43 @@ final class LogSink {
         let found = await Discovery.repositories(under: f.dir).map(\.lastPathComponent)
         #expect(found == ["nested", "work"])
     }
+
+    /// The root a repository itself, as an umbrella checkout is.
+    @Test func filesSavedInARootRepositoryDontCallForAScanButANewRepositoryDoes() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+
+        let src = f.clone.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: src.appendingPathComponent("lib"), withIntermediateDirectories: true)
+        let scan = await Discovery.scan(under: f.clone)
+        #expect(scan.repositories.map(\.path) == [f.clone.path])
+
+        try "x".write(to: src.appendingPathComponent("file"), atomically: true, encoding: .utf8)
+        #expect(!Discovery.couldChange(scan, under: f.clone, paths: [src.path + "/", f.clone.path]))
+
+        try await f.sh(src, "init", "-q")
+        #expect(Discovery.couldChange(scan, under: f.clone, paths: [src.path + "/"]))
+        try FileManager.default.removeItem(at: src.appendingPathComponent(".git"))
+        try FileManager.default.createDirectory(at: src.appendingPathComponent("new"), withIntermediateDirectories: true)
+        #expect(Discovery.couldChange(scan, under: f.clone, paths: [src.path + "/"]))
+    }
+
+    @Test func discoveryReportsTheWorktreesItLeftOut() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+
+        try await f.branch("wt", file: "wt")
+        try await f.git("worktree", "add", "-q", f.dir.appendingPathComponent("worktree").path, "wt")
+
+        let scan = await Discovery.scan(under: f.dir)
+        #expect(scan.repositories.map(\.lastPathComponent) == ["work"])
+        #expect(scan.excluded.map(\.lastPathComponent) == ["worktree"])
+        // It looked inside the root, which isn't a checkout, and not inside the checkouts.
+        let root = f.dir.standardizedFileURL.resolvingSymlinksInPath().path
+        #expect(scan.listed[root]?.isSuperset(of: ["work", "worktree"]) == true)
+        #expect(scan.listed[root + "/work"] == nil && scan.listed[root + "/worktree"] == nil)
+        // A checkout known to be a main one isn't asked again.
+        let trusting = await Discovery.scan(under: f.dir, knownMain: Set(scan.repositories + scan.excluded))
+        #expect(trusting.repositories.map(\.lastPathComponent) == ["work", "worktree"])
+    }
 }
