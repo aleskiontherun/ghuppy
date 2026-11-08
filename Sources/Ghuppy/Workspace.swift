@@ -330,8 +330,9 @@ final class Workspace: Identifiable {
     }
 
     /// Some directories under the working directory changed. When one of
-    /// them lies outside every repository, a clone may have arrived or a
-    /// repository gone, so the list is discovered again once such changes
+    /// them lies outside every repository and gained or lost a folder, or
+    /// became a repository, a clone may have arrived or a repository gone,
+    /// so the list is discovered again once such changes
     /// settle, and then at most every few seconds however busy the tree is.
     /// A refresh or a cleanup discovers on its own, so it goes first and
     /// this looks again after it. Changes inside the repositories, which are

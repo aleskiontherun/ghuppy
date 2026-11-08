@@ -64,6 +64,26 @@ struct DiscoveryChangeTests {
         #expect(!couldChange("/Users/me/github/sibling/src/", scan: scan))
     }
 
+    @Test func aWalkedFolderCountsOnlyWhenItsFoldersChangeOrItBecomesARepository() {
+        let scan = Discovery.Scan(
+            repositories: [root, root.appendingPathComponent("sibling")],
+            listed: ["/Users/me/github": ["src", "sibling"], "/Users/me/github/src": ["lib"]]
+        )
+        func couldChange(_ path: String, folders: Set<String>, repo: Bool = false) -> Bool {
+            Discovery.couldChange(scan, under: root, paths: [path],
+                                  subdirectories: { _ in folders }, isRepo: { _ in repo })
+        }
+        // A file saved in the root repository's own tree.
+        #expect(!couldChange("/Users/me/github/src/", folders: ["lib"]))
+        #expect(!couldChange("/Users/me/github/", folders: ["src", "sibling"]))
+        // A clone beside them, a deleted repository, and a `git init`.
+        #expect(couldChange("/Users/me/github/", folders: ["src", "sibling", "new"]))
+        #expect(couldChange("/Users/me/github/", folders: ["src"]))
+        #expect(couldChange("/Users/me/github/src/", folders: ["lib"], repo: true))
+        // A folder the walk never looked inside.
+        #expect(couldChange("/Users/me/github/src/lib/", folders: []))
+    }
+
     @Test func thePrivatePrefixFSEventsAddsIsDropped() {
         #expect(!couldChange("/private/Users/me/github/app/src/"))
         #expect(couldChange("/private/Users/me/github/new/"))

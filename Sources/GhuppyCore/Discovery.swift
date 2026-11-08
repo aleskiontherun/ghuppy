@@ -13,10 +13,14 @@ public enum Discovery {
         /// The directories the walk found and then left out without looking
         /// inside: the ones the root repository ignores, and linked worktrees.
         public var excluded: [URL]
+        /// The subdirectories of each directory the walk looked inside, by
+        /// path, which tells a folder gained or lost from a file saved in it.
+        public var listed: [String: Set<String>]
 
-        public init(repositories: [URL] = [], excluded: [URL] = []) {
+        public init(repositories: [URL] = [], excluded: [URL] = [], listed: [String: Set<String>] = [:]) {
             self.repositories = repositories
             self.excluded = excluded
+            self.listed = listed
         }
     }
 
@@ -44,11 +48,13 @@ public enum Discovery {
 
         var found: [URL] = rootRepo == nil ? [] : [root]
         var excluded: [URL] = []
+        var listed: [String: Set<String>] = [:]
         var queue: [(URL, Int)] = [(root, 0)]
         while !queue.isEmpty, !Task.isCancelled {
             let (dir, depth) = queue.removeFirst()
             guard depth < maxDepth else { continue }
             var children = subdirectories(of: dir)
+            listed[dir.path] = Set(children.map(\.lastPathComponent))
             if let rootRepo {
                 let ignored = await ignoredPaths(children, in: rootRepo)
                 excluded += children.filter { ignored.contains($0.path) }
@@ -75,7 +81,7 @@ public enum Discovery {
                 result.append(repo)
             }
         }
-        return Scan(repositories: result, excluded: excluded)
+        return Scan(repositories: result, excluded: excluded, listed: listed)
     }
 
     /// Whether a change to the contents of any of `paths`, directories as
@@ -87,7 +93,22 @@ public enum Discovery {
     /// fetching into the `.git` of a folder that isn't a checkout yet, which
     /// tells the clone isn't done. A checkout's own top level isn't watched
     /// for losing its `.git`, which edits there would drown out.
+    ///
+    /// A directory the walk looked inside only counts when it has become a
+    /// checkout or its subdirectories aren't the ones it had then, so files
+    /// saved beside the checkouts -- all over a root that is a repository
+    /// itself -- don't count. That costs a directory listing for each such
+    /// path; `subdirectories` and `isRepo` stand in for the disk in tests.
     public static func couldChange(_ last: Scan, under root: URL, paths: [String]) -> Bool {
+        couldChange(last, under: root, paths: paths,
+                    subdirectories: { Set(Discovery.subdirectories(of: $0).map(\.lastPathComponent)) },
+                    isRepo: Discovery.isRepo)
+    }
+
+    static func couldChange(
+        _ last: Scan, under root: URL, paths: [String],
+        subdirectories: (URL) -> Set<String>, isRepo: (URL) -> Bool
+    ) -> Bool {
         let rootPath = root.standardizedFileURL.resolvingSymlinksInPath().path
         let rootIsRepo = last.repositories.contains { $0.path == rootPath }
         let boundaries = (last.repositories + last.excluded).map(\.path).filter { $0 != rootPath }
@@ -106,7 +127,10 @@ public enum Discovery {
             // or one being cloned.
             guard let inside, inside.count < maxDepth, !inside.contains(where: skipped.contains),
                   !(rootIsRepo && inside.first == ".git") else { return false }
-            return !boundaries.contains { path == $0 || path.hasPrefix($0 + "/") }
+            guard !boundaries.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) else { return false }
+            guard let before = last.listed[path] else { return true }
+            let dir = URL(fileURLWithPath: path)
+            return (path != rootPath && isRepo(dir)) || subdirectories(dir) != before
         }
     }
 
