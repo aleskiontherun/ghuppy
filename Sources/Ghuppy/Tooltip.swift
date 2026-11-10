@@ -41,6 +41,9 @@ private final class TooltipAnchorView: NSView {
 
     var lines: [TooltipLine] = []
     private var waiting: Task<Void, Never>?
+    /// Watches for a press while the pointer is inside, so a tooltip that
+    /// hasn't appeared yet doesn't appear over a button already pressed.
+    private var monitor: Any?
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -61,6 +64,14 @@ private final class TooltipAnchorView: NSView {
             guard !Task.isCancelled, let self else { return }
             TooltipPanel.shared.show(lines, for: self)
         }
+        // Once pressed, the tooltip stays away until the pointer leaves and
+        // comes back. The panel hides one already showing.
+        monitor = monitor ?? NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .keyDown]
+        ) { [weak self] event in
+            MainActor.assumeIsolated { self?.waiting?.cancel() }
+            return event
+        }
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -74,6 +85,8 @@ private final class TooltipAnchorView: NSView {
 
     private func dismiss() {
         waiting?.cancel()
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
         TooltipPanel.shared.hide(for: self)
     }
 }
