@@ -20,9 +20,13 @@ last 3 merged, the last merged first.
   working directory, so repositories added or deleted since the last look join
   or leave the list, then cleans them up, a few at a time: only the pinned ones
   while Pinned only is on, unless ⇧⌘G asks for every one.
+- **Repository actions** — buttons a repository adds to its own card from a
+  `ghuppy.yaml`, each running a command and showing its output in a log tab
+  of its own. See [Repository actions](#repository-actions).
 
-⌘/ lists every action and shortcut, and how labels are decided. ⌘U opens the
-author select. ⌘L shows or hides the log, and ⌘K clears the log tab on screen. ⌃C stops everything running in
+⌘/ lists every action and shortcut, how labels are decided, and how to set up
+repository actions. ⌘U opens the author select. ⌘L shows or hides the log,
+and ⌘K clears the log tab on screen. ⌃C stops everything running in
 every tab. A cleanup stopped this way deletes nothing more, and what it had
 already deleted stays deleted.
 
@@ -111,7 +115,7 @@ Each one gets a button on the repository's card, left of Ghuppy!:
 ```yaml
 actions:
   - name: Test            # the button's tooltip and its log tab
-    icon: checkmark.seal  # an SF Symbol; a terminal if left out or unknown
+    icon: checkmark.seal  # an SF Symbol's name; a terminal if left out or unknown
     run: swift test
   - name: Build app
     icon: hammer
@@ -120,20 +124,31 @@ actions:
       ./scripts/build-app.sh --install
 ```
 
-The button runs `run` with `zsh -l -c` in the repository's directory, so the
-PATH from `~/.zprofile` is there even when Ghuppy was opened from Finder,
-and with nothing on stdin: an action that asks for input gets none. Its
-output goes to a tab of its own in the log, which comes on screen, stderr in
-red, and ends with the exit status. Running the action again clears the tab
-and reuses it; pressing the button while it runs only shows the tab. **Stop**
-above the log, or ⌃C, stops it and everything it started; so does closing
-the Ghuppy tab or quitting. A finished action's tab closes with its ×.
+`name` and `run` are required, and names are unique within the file. Keys
+Ghuppy doesn't know are ignored. Icon names come from Apple's
+[SF Symbols](https://developer.apple.com/sf-symbols/) app: right-click a
+symbol there and choose Copy Name.
 
-The tooltip shows the command before it runs: a `ghuppy.yaml` comes with
-the repository, so check what one you didn't write does. Ghuppy reads the
-file again whenever something at the repository's root changes, and a file
-it can't use is named in the log, with a warning on the card in place of
-its buttons.
+- **Running.** The button runs `run` with `zsh -l -c` in the repository's
+  directory, so the PATH from `~/.zprofile` is there even when Ghuppy was
+  opened from Finder. Nothing comes in on stdin: an action that asks for
+  input gets none.
+- **Output.** The log comes on screen at a tab of the action's own, which
+  fills as the command runs, stderr in red, and ends with the exit status; the
+  tab shows a spinner, then a check or a cross. Running the action again
+  clears the tab and reuses it, and pressing its button while it runs only
+  shows the tab. A finished action's tab closes with its ×. ⌘K clears the tab
+  on screen.
+- **Stopping.** **Stop** above the log, or ⌃C, stops the action and
+  everything it started; so does closing the Ghuppy tab or quitting.
+- **Changes.** Ghuppy reads the file again whenever something at the
+  repository's root changes, so edits show on the card a few seconds later. A
+  file it can't use is named in the log, with a warning on the card in place
+  of its buttons.
+
+A `ghuppy.yaml` comes with the repository, like any script in it. The
+button's tooltip shows the command, so check what one you didn't write runs
+before pressing it.
 
 ## What Ghuppy! deletes
 
