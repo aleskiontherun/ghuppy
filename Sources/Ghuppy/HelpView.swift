@@ -11,8 +11,9 @@ struct HelpMenuButton: View {
     }
 }
 
-/// Every action with its shortcut, and how a pull request gets its label,
-/// in a window of its own: it's wider than the smallest main window.
+/// Every action with its shortcut, how a pull request gets its label, and
+/// how a repository offers actions of its own, in a window of its own: it's
+/// wider than the smallest main window.
 struct HelpView: View {
     static let windowID = "help"
 
@@ -26,7 +27,13 @@ struct HelpView: View {
         VStack(alignment: .trailing, spacing: 20) {
             HStack(alignment: .top, spacing: 56) {
                 ActionList().frame(width: 410)
-                LabelDiagram().frame(width: 410)
+                // Beside the longer list of actions, so the window stays
+                // short enough for a laptop screen.
+                VStack(alignment: .leading, spacing: 24) {
+                    LabelDiagram()
+                    RepositoryActions()
+                }
+                .frame(width: 410)
             }
             Button("Done") { dismiss() }
                 .keyboardShortcut(.defaultAction)
@@ -66,11 +73,13 @@ private struct ActionList: View {
         ("On a repository", [
             Action(name: "Ghuppy!", description: "Clean up this repository alone"),
             Action(name: "Refresh", description: "Reload this repository alone"),
+            Action(name: "Branch", description: "Switch branch, and pull it up to date"),
             Action(name: "Pin", description: "Keep it at the top of the list"),
+            Action(name: "Its actions", description: "Run what its ghuppy.yaml offers"),
         ]),
         ("Log", [
             Action(name: "Show or Hide", description: "Toggle the log", shortcut: "⌘L"),
-            Action(name: "Clear", description: "Empty the log", shortcut: "⌘K"),
+            Action(name: "Clear", description: "Empty the log tab on screen", shortcut: "⌘K"),
         ]),
         ("Tabs and windows", [
             Action(name: "New Tab", description: "Open another working directory", shortcut: "⌘T"),
@@ -90,14 +99,19 @@ private struct ActionList: View {
                         .font(HelpView.headingFont)
                         .foregroundStyle(.secondary)
                     ForEach(group.actions) { action in
-                        row(action)
+                        ActionRow(action: action)
                     }
                 }
             }
         }
     }
+}
 
-    private func row(_ action: Action) -> some View {
+/// An action's name, what it does, and its shortcut, on one line.
+private struct ActionRow: View {
+    let action: Action
+
+    var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(action.name).frame(width: 104, alignment: .leading)
             Text(action.description)
@@ -107,6 +121,59 @@ private struct ActionList: View {
             Text(action.shortcut).foregroundStyle(.secondary)
         }
         .font(.system(size: HelpView.textSize))
+    }
+}
+
+/// How a repository's `ghuppy.yaml` adds buttons to its card: a file to
+/// start from, and what happens when one is pressed.
+private struct RepositoryActions: View {
+    private static let example = """
+        actions:
+          - name: Test         # tooltip and log tab
+            icon: hammer       # from the SF Symbols app
+            run: swift test    # zsh -l, in the repo
+        """
+
+    /// Apple's app for browsing the symbols, whose names `icon` takes.
+    private static let symbols = URL(string: "https://developer.apple.com/sf-symbols/")!
+
+    private static let notes = [
+        Action(name: "Output", description: "A log tab of its own, as it runs"),
+        Action(name: "Stop", description: "It and everything it started", shortcut: "⌃C"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                // Beside the title, where it costs the window no height.
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Repository actions").font(HelpView.titleFont)
+                    Spacer()
+                    Link(destination: Self.symbols) {
+                        Label("SF Symbols", systemImage: "arrow.up.right.square")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .font(.system(size: HelpView.textSize))
+                    .tooltip("Where icon names come from")
+                }
+                Text("A ghuppy.yaml at a repository's root adds buttons to its card.")
+                    .font(.system(size: HelpView.textSize))
+                    .foregroundStyle(.secondary)
+            }
+            Text(Self.example)
+                .font(.system(size: 12, design: .monospaced))
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(Self.notes) { note in
+                    ActionRow(action: note)
+                }
+            }
+        }
     }
 }
 

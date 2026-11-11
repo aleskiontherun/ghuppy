@@ -20,9 +20,13 @@ last 3 merged, the last merged first.
   working directory, so repositories added or deleted since the last look join
   or leave the list, then cleans them up, a few at a time: only the pinned ones
   while Pinned only is on, unless ⇧⌘G asks for every one.
+- **Repository actions** — buttons a repository adds to its own card from a
+  `ghuppy.yaml`, each running a command and showing its output in a log tab
+  of its own. See [Repository actions](#repository-actions).
 
-⌘/ lists every action and shortcut, and how labels are decided. ⌘U opens the
-author select. ⌘L shows or hides the log, and ⌘K clears it. ⌃C stops everything running in
+⌘/ lists every action and shortcut, how labels are decided, and how to set up
+repository actions. ⌘U opens the author select. ⌘L shows or hides the log,
+and ⌘K clears the log tab on screen. ⌃C stops everything running in
 every tab. A cleanup stopped this way deletes nothing more, and what it had
 already deleted stays deleted.
 
@@ -103,6 +107,49 @@ out of everyone with a pull request listed; every repository stays in the list.
 It only changes what is shown: Ghuppy ’em all! acts as before. Each tab remembers
 its own choice, across launches too, until its working directory changes.
 
+## Repository actions
+
+A repository can offer commands of its own in a `ghuppy.yaml` at its root.
+Each one gets a button on the repository's card:
+
+```yaml
+actions:
+  - name: Test            # the button's tooltip and its log tab
+    icon: checkmark.seal  # an SF Symbol's name; a terminal if left out or unknown
+    run: swift test
+  - name: Build app
+    icon: hammer
+    run: |
+      swift build
+      ./scripts/build-app.sh --install
+```
+
+`name` and `run` are required, and names are unique within the file. Keys
+Ghuppy doesn't know are ignored. Icon names come from Apple's
+[SF Symbols](https://developer.apple.com/sf-symbols/) app: right-click a
+symbol there and choose Copy Name.
+
+- **Running.** The button runs `run` with `zsh -l -c` in the repository's
+  directory, so the PATH from `~/.zprofile` is there even when Ghuppy was
+  opened from Finder. Nothing comes in on stdin: an action that asks for
+  input gets none.
+- **Output.** The log comes on screen at a tab of the action's own, which
+  fills as the command runs, stderr in red, and ends with the exit status; the
+  tab shows a spinner, then a check or a cross. Running the action again
+  clears the tab and reuses it, and pressing its button while it runs only
+  shows the tab. A finished action's tab closes with its ×. ⌘K clears the tab
+  on screen.
+- **Stopping.** **Stop** above the log, or ⌃C, stops the action and
+  everything it started; so does closing the Ghuppy tab or quitting.
+- **Changes.** Ghuppy reads the file again whenever something at the
+  repository's root changes, so edits show on the card a few seconds later. A
+  file it can't use is named in the log, with a warning on the card in place
+  of its buttons.
+
+A `ghuppy.yaml` comes with the repository, like any script in it. The
+button's tooltip shows the command, so check what one you didn't write runs
+before pressing it.
+
 ## What Ghuppy! deletes
 
 A branch marked `[gone]` (its remote branch was deleted) is only a candidate:
@@ -135,6 +182,26 @@ is its branch.
 
 Turn on **Dry run**, the flask in the toolbar (⇧⌘D), to see what Ghuppy! would do
 without changing anything.
+
+## Switching branches
+
+The branch beside a repository's name opens a menu of its local branches,
+and, under **Remote**, the branches on its remotes that have no local branch
+yet. Choosing one switches the checkout to it and brings it up to date: its
+remote is fetched, then the branch is fast-forwarded to the branch it
+tracks. Choosing the branch already checked out just pulls it, and choosing
+a remote branch creates a local branch that tracks it. A branch that tracks
+nothing, or whose remote branch is gone, is switched to and left as it is.
+
+The pull is fast-forward only, and a refused switch leaves the checkout
+where it was. It is refused while tracked files have uncommitted changes,
+which have to be committed or stashed first. Untracked files don't count:
+git won't overwrite them, and refuses the switch instead if one is in the
+way, though the branch has been brought up to date by then. It is refused
+too when the branch has commits its upstream lacks while the
+upstream has new ones of its own: the two have diverged, and only a merge or
+a rebase can bring them together. A branch checked out in another worktree
+can't be chosen. Dry run doesn't apply to switching.
 
 ## Tabs
 

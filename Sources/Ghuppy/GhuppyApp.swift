@@ -1,4 +1,5 @@
 import AppKit
+import GhuppyCore
 import SwiftUI
 
 @main
@@ -123,5 +124,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    /// Repository actions lead process groups of their own, which would
+    /// otherwise carry on with nobody to show their output to.
+    func applicationWillTerminate(_ notification: Notification) {
+        ActionProcess.terminateAll()
     }
 }

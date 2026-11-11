@@ -4,6 +4,7 @@ import SwiftUI
 
 struct RepoCard: View {
     @Environment(Workspace.self) private var model
+    @AppStorage("showLog") private var showLog = true
     let repo: RepoState
 
     var body: some View {
@@ -94,6 +95,10 @@ struct RepoCard: View {
                 }
                 branchLine
             }
+            // Ahead of the result beside it, which truncates instead: the
+            // branch menu doesn't hold out for its room, and the line would
+            // wrap.
+            .layoutPriority(1)
             Spacer()
             if let activity = repo.activity {
                 // The cleanup icon beside it is animating meanwhile.
@@ -108,6 +113,7 @@ struct RepoCard: View {
                     .frame(maxWidth: 260, alignment: .trailing)
             }
             HStack(spacing: 4) {
+                actionButtons
                 // Not disabled while it runs, which would dim the animation.
                 Button {
                     if repo.activity == nil { model.startCleanup(of: repo) }
@@ -127,10 +133,103 @@ struct RepoCard: View {
         }
     }
 
+    /// The branch checked out, opening a menu of the others to switch to.
+    /// Choosing one, or the one checked out, pulls it up to date as well.
+    private var branchMenu: some View {
+        Menu {
+            if let branches = repo.branches {
+                Section("Local") {
+                    ForEach(branches.local, id: \.name) { branch in
+                        localItem(branch)
+                    }
+                }
+                if !branches.remote.isEmpty {
+                    Menu("Remote") {
+                        ForEach(branches.remote, id: \.self) { ref in
+                            Button(ref) { model.startSwitch(of: repo, to: .remote(ref)) }
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label(repo.status.branch ?? "detached HEAD", systemImage: "arrow.triangle.branch")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(repo.activity != nil || !model.canAct || repo.branches == nil)
+        .tooltip("Switch branch, and pull it up to date")
+    }
+
+    /// A local branch, ticked when it's checked out. One checked out in
+    /// another worktree can't be checked out here too.
+    private func localItem(_ branch: Branches.Local) -> some View {
+        let checkedOut = branch.name == repo.status.branch
+        let title = branch.worktree == nil ? branch.name : "\(branch.name) (in another worktree)"
+        return Toggle(title, isOn: Binding(
+            get: { checkedOut },
+            set: { _ in model.startSwitch(of: repo, to: .local(branch.name)) }
+        ))
+        .disabled(branch.worktree != nil)
+    }
+
+    /// The actions in the repository's `ghuppy.yaml`, apart from the
+    /// buttons every repository has.
+    @ViewBuilder
+    private var actionButtons: some View {
+        if let error = repo.actionsError {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(Color.warmRed)
+                .frame(width: 16, height: 16)
+                .padding(.horizontal, 6)
+                .tooltip(error)
+        }
+        ForEach(repo.actions) { action in
+            actionButton(action)
+        }
+        if repo.actionsError != nil || !repo.actions.isEmpty {
+            Rectangle()
+                .fill(Color.muted)
+                .frame(width: 1, height: 14)
+                .padding(.horizontal, 3)
+        }
+    }
+
+    /// Runs the action and shows its log tab, or only shows the tab while
+    /// it's running, when the icon turns into a spinner.
+    private func actionButton(_ action: RepoAction) -> some View {
+        Button {
+            showLog = true
+            model.run(action, of: repo)
+        } label: {
+            Group {
+                if model.isRunning(action, of: repo) {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: action.symbol)
+                        .foregroundStyle(Color.secondary)
+                }
+            }
+            .frame(width: 16, height: 16)
+        }
+        .buttonStyle(.hoverHighlight)
+        .accessibilityLabel(action.name)
+        .tooltip([TooltipLine(text: action.name), TooltipLine(text: Self.command(action.run))])
+    }
+
+    /// The command, a few lines of it at most, for the action's tooltip. One
+    /// tooltip line, which a command repeating a line can't trip up.
+    private static func command(_ run: String) -> String {
+        let lines = run.split(separator: "\n", omittingEmptySubsequences: false)
+        let shown = lines.prefix(5).map { "$ \($0)" }
+        return (lines.count > shown.count ? shown + ["…"] : shown).joined(separator: "\n")
+    }
+
     private var branchLine: some View {
         HStack(spacing: 8) {
             let status = repo.status
-            Label(status.branch ?? "detached HEAD", systemImage: "arrow.triangle.branch")
+            branchMenu
             if status.ahead > 0 { Text("↑\(status.ahead)").tooltip("\(status.ahead) commits to push") }
             if status.behind > 0 { Text("↓\(status.behind)").tooltip("\(status.behind) commits to pull") }
             if status.dirty {

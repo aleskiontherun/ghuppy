@@ -223,14 +223,18 @@ public struct GitRepo: Sendable, Hashable {
     /// ours fail with "cannot lock ref": it found the ref locked, or moved
     /// between reading and writing it. Waiting for the other fetch to finish
     /// and fetching again is all it takes.
-    func fetchPrune(log: Logger, attempts: Int = 3, retryDelay: Duration = .seconds(1)) async throws {
+    /// `remote` names the remote to fetch, git's own choice when nil:
+    /// the checked-out branch's remote, or `origin`.
+    func fetchPrune(remote: String? = nil, log: Logger, attempts: Int = 3,
+                    retryDelay: Duration = .seconds(1)) async throws {
+        let args = ["fetch", "--prune"] + (remote.map { [$0] } ?? [])
         for attempt in 1...attempts {
-            let fetch = await git("fetch", "--prune")
+            let fetch = await git(args)
             if fetch.ok { return }
             guard attempt < attempts, fetch.stderr.contains("cannot lock ref") else {
-                throw ShellError(message: "git fetch --prune failed: \(fetch.err)")
+                throw ShellError(message: "git \(args.joined(separator: " ")) failed: \(fetch.err)")
             }
-            await log("another git is updating origin's refs, fetching again")
+            await log("another git is updating \(remote ?? "origin")'s refs, fetching again")
             try await Task.sleep(for: retryDelay * attempt)
         }
     }
