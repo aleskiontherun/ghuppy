@@ -66,6 +66,7 @@ private struct ActionList: View {
         ("On a repository", [
             Action(name: "Ghuppy!", description: "Clean up this repository alone"),
             Action(name: "Refresh", description: "Reload this repository alone"),
+            Action(name: "Branch", description: "Switch branch, and pull it up to date"),
             Action(name: "Pin", description: "Keep it at the top of the list"),
         ]),
         ("Log", [
