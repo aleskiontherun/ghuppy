@@ -110,7 +110,7 @@ its own choice, across launches too, until its working directory changes.
 ## Repository actions
 
 A repository can offer commands of its own in a `ghuppy.yaml` at its root.
-Each one gets a button on the repository's card, left of Ghuppy!:
+Each one gets a button on the repository's card:
 
 ```yaml
 actions:
