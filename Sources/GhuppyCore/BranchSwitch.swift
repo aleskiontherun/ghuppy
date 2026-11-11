@@ -192,8 +192,13 @@ public struct BranchSwitch: Sendable {
         }
 
         var behind = 0
+        /// The commits compared, which a fast-forward goes from and to.
+        var compared: (local: String, upstream: String)?
         if case .local = target, let ref = upstream {
-            let counts = try await repo.gitChecked("rev-list", "--left-right", "--count", "refs/heads/\(name)...\(ref)")
+            let local = try await repo.gitChecked("rev-parse", "--verify", "refs/heads/\(name)^{commit}")
+            let remote = try await repo.gitChecked("rev-parse", "--verify", "\(ref)^{commit}")
+            compared = (local, remote)
+            let counts = try await repo.gitChecked("rev-list", "--left-right", "--count", "\(local)...\(remote)")
                 .split(whereSeparator: \.isWhitespace).compactMap { Int($0) }
             guard counts.count == 2 else { throw ShellError(message: "can't compare \(name) with \(GitRepo.shortRef(ref))") }
             let ahead = counts[0]
@@ -214,13 +219,12 @@ public struct BranchSwitch: Sendable {
         guard !Task.isCancelled else { throw CancellationError() }
 
         var outcome = Outcome(branch: name)
-        if switching, behind > 0, let ref = upstream {
-            // Only from the commit compared above: a branch moved since is
-            // left alone.
-            let old = try await repo.gitChecked("rev-parse", "refs/heads/\(name)")
-            let new = try await repo.gitChecked("rev-parse", ref)
+        if switching, behind > 0, let ref = upstream, let compared {
+            // From and to the commits compared, so it is the fast-forward
+            // counted, whatever moves meanwhile: a branch moved since fails
+            // it.
             try await repo.gitChecked("update-ref", "-m", "ghuppy: fast-forward to \(GitRepo.shortRef(ref))",
-                                      "refs/heads/\(name)", new, old)
+                                      "refs/heads/\(name)", compared.upstream, compared.local)
             await log("pulled \(GitRepo.commits(behind)) into \(name)")
             outcome.pulled = behind
         }
@@ -246,7 +250,8 @@ public struct BranchSwitch: Sendable {
         }
         // Pulled before the switch.
         if switching { return outcome }
-        let merge = await repo.git("merge", "--ff-only", ref)
+        // To the commit compared, not wherever the upstream is now.
+        let merge = await repo.git("merge", "--ff-only", compared?.upstream ?? ref)
         guard merge.ok else {
             throw ShellError(message: "\(name) can't fast-forward to \(GitRepo.shortRef(ref)): \(merge.err)")
         }
