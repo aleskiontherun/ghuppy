@@ -22,7 +22,7 @@ last 3 merged, the last merged first.
   while Pinned only is on, unless ⇧⌘G asks for every one.
 
 ⌘/ lists every action and shortcut, and how labels are decided. ⌘U opens the
-author select. ⌘L shows or hides the log, and ⌘K clears it. ⌃C stops everything running in
+author select. ⌘L shows or hides the log, and ⌘K clears the log tab on screen. ⌃C stops everything running in
 every tab. A cleanup stopped this way deletes nothing more, and what it had
 already deleted stays deleted.
 
@@ -102,6 +102,38 @@ The **Author** select narrows the pull requests on screen to one person's,
 out of everyone with a pull request listed; every repository stays in the list.
 It only changes what is shown: Ghuppy ’em all! acts as before. Each tab remembers
 its own choice, across launches too, until its working directory changes.
+
+## Repository actions
+
+A repository can offer commands of its own in a `ghuppy.yaml` at its root.
+Each one gets a button on the repository's card, left of Ghuppy!:
+
+```yaml
+actions:
+  - name: Test            # the button's tooltip and its log tab
+    icon: checkmark.seal  # an SF Symbol; a terminal if left out or unknown
+    run: swift test
+  - name: Build app
+    icon: hammer
+    run: |
+      swift build
+      ./scripts/build-app.sh --install
+```
+
+The button runs `run` with `zsh -l -c` in the repository's directory, so the
+PATH from `~/.zprofile` is there even when Ghuppy was opened from Finder,
+and with nothing on stdin: an action that asks for input gets none. Its
+output goes to a tab of its own in the log, which comes on screen, stderr in
+red, and ends with the exit status. Running the action again clears the tab
+and reuses it; pressing the button while it runs only shows the tab. **Stop**
+above the log, or ⌃C, stops it and everything it started; so does closing
+the Ghuppy tab or quitting. A finished action's tab closes with its ×.
+
+The tooltip shows the command before it runs: a `ghuppy.yaml` comes with
+the repository, so check what one you didn't write does. Ghuppy reads the
+file again whenever something at the repository's root changes, and a file
+it can't use is named in the log, with a warning on the card in place of
+its buttons.
 
 ## What Ghuppy! deletes
 

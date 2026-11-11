@@ -68,10 +68,11 @@ private struct ActionList: View {
             Action(name: "Refresh", description: "Reload this repository alone"),
             Action(name: "Branch", description: "Switch branch, and pull it up to date"),
             Action(name: "Pin", description: "Keep it at the top of the list"),
+            Action(name: "Its actions", description: "Run what its ghuppy.yaml offers"),
         ]),
         ("Log", [
             Action(name: "Show or Hide", description: "Toggle the log", shortcut: "⌘L"),
-            Action(name: "Clear", description: "Empty the log", shortcut: "⌘K"),
+            Action(name: "Clear", description: "Empty the log tab on screen", shortcut: "⌘K"),
         ]),
         ("Tabs and windows", [
             Action(name: "New Tab", description: "Open another working directory", shortcut: "⌘T"),

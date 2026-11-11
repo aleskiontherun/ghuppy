@@ -62,6 +62,8 @@ final class Tabs {
 
     func close(_ workspace: Workspace) {
         guard workspaces.count > 1, let index = workspaces.firstIndex(where: { $0.id == workspace.id }) else { return }
+        // Nothing would show what they write any more.
+        workspace.stopActions()
         workspaces.remove(at: index)
         if selectedID == workspace.id {
             selectedID = workspaces[min(index, workspaces.count - 1)].id

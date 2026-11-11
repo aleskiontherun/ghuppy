@@ -50,6 +50,15 @@ public final class ActionProcess: @unchecked Sendable {
         }
     }
 
+    /// The process groups of the actions still running, for `terminateAll`.
+    private static let running = Running()
+
+    /// Terminates every action still running, there and then: for the app
+    /// to call as it quits, since a process group of its own outlives it.
+    public static func terminateAll() {
+        running.forEach { kill(-$0, SIGTERM) }
+    }
+
     private let continuation: AsyncStream<ActionEvent>.Continuation
     /// Everything below is touched on this queue alone.
     private let queue = DispatchQueue(label: "Ghuppy.ActionProcess")
@@ -116,12 +125,15 @@ public final class ActionProcess: @unchecked Sendable {
                 return fail(spawned)
             }
             self.pid = pid
+            Self.running.insert(pid)
             watch(out[0], isError: false)
             watch(err[0], isError: true)
+            let child = pid
             DispatchQueue.global(qos: .utility).async { [self] in
                 var status: Int32 = 0
-                while waitpid(pid, &status, 0) == -1 && errno == EINTR {}
-                queue.async { [self] in exited(status) }
+                while waitpid(child, &status, 0) == -1 && errno == EINTR {}
+                let result = status
+                queue.async { [self] in exited(result) }
             }
         }
     }
@@ -179,6 +191,7 @@ public final class ActionProcess: @unchecked Sendable {
     }
 
     private func exited(_ status: Int32) {
+        Self.running.remove(pid)
         let signal = status & 0x7f
         exit = signal == 0 ? .status((status >> 8) & 0xff) : .signal(signal)
         // Anything it left running with the pipes open gets a moment more.
@@ -219,4 +232,13 @@ public final class ActionProcess: @unchecked Sendable {
         }
         return line.replacingOccurrences(of: "\u{1B}\\[[0-9;?]*[ -/]*[@-~]", with: "", options: .regularExpression)
     }
+}
+
+private final class Running: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pids = Set<pid_t>()
+
+    func insert(_ pid: pid_t) { _ = lock.withLock { pids.insert(pid) } }
+    func remove(_ pid: pid_t) { _ = lock.withLock { pids.remove(pid) } }
+    func forEach(_ body: (pid_t) -> Void) { lock.withLock { pids }.forEach(body) }
 }
