@@ -146,11 +146,12 @@ tracks. Choosing the branch already checked out just pulls it, and choosing
 a remote branch creates a local branch that tracks it. A branch that tracks
 nothing, or whose remote branch is gone, is switched to and left as it is.
 
-The pull is fast-forward only, and what could stop it is checked before the
-checkout moves, so a refused switch leaves it where it was. It is refused
-while tracked files have uncommitted changes, which have to be committed or
-stashed first; untracked files don't count, as git won't overwrite them. It
-is refused too when the branch has commits its upstream lacks while the
+The pull is fast-forward only, and a refused switch leaves the checkout
+where it was. It is refused while tracked files have uncommitted changes,
+which have to be committed or stashed first. Untracked files don't count:
+git won't overwrite them, and refuses the switch instead if one is in the
+way, though the branch has been brought up to date by then. It is refused
+too when the branch has commits its upstream lacks while the
 upstream has new ones of its own: the two have diverged, and only a merge or
 a rebase can bring them together. A branch checked out in another worktree
 can't be chosen. Dry run doesn't apply to switching.

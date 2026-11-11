@@ -107,6 +107,40 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: f.clone.appendingPathComponent("notes.txt").path))
     }
 
+    @Test func leavesTheCheckoutWhereItWasWhenAnUntrackedFileIsInTheWay() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+        try await f.branch("feature", file: "feature")
+        // The pull would bring in `incoming`, which is untracked here.
+        try await f.pushElsewhere("incoming", to: "feature")
+        try "mine".write(to: f.clone.appendingPathComponent("incoming"), atomically: true, encoding: .utf8)
+
+        let sink = await LogSink()
+        await #expect(throws: ShellError.self) {
+            try await BranchSwitch(repo: f.repo).run(to: .local("feature"), log: sink.logger)
+        }
+        #expect(try await head(f) == "main")
+        #expect(try String(contentsOf: f.clone.appendingPathComponent("incoming"), encoding: .utf8) == "mine")
+        // Fast-forwarded all the same, which needs no working tree.
+        #expect(try await sha(f, "feature") == (try await sha(f, "origin/feature")))
+    }
+
+    @Test func refusesABranchCheckedOutInAnotherWorktree() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+        try await f.branch("feature", file: "feature")
+        try await f.pushElsewhere("one", to: "feature")
+        try await f.git("worktree", "add", "-q", f.dir.appendingPathComponent("tree").path, "feature")
+        let before = try await sha(f, "feature")
+
+        let sink = await LogSink()
+        await #expect(throws: ShellError.self) {
+            try await BranchSwitch(repo: f.repo).run(to: .local("feature"), log: sink.logger)
+        }
+        #expect(try await head(f) == "main")
+        #expect(try await sha(f, "feature") == before)
+    }
+
     @Test func switchesToABranchThatTracksNothing() async throws {
         let f = try await Fixture()
         defer { f.cleanUp() }

@@ -96,14 +96,16 @@ private extension String {
 /// Switches a checkout to a branch and brings that branch up to date with
 /// the one it tracks, fast-forward only.
 ///
-/// The branch's remote is fetched first. Everything that could stop the
-/// pull is checked before the checkout moves, so a switch that fails leaves
-/// the checkout where it was: a branch with commits of its own that its
+/// The branch's remote is fetched first. A switch that fails leaves the
+/// checkout where it was: a branch with commits of its own that its
 /// upstream lacks, while its upstream has new ones too, can't fast-forward,
 /// and changes to tracked files could be clobbered, or stand in the way of
-/// the pull, so they have to be committed or stashed first. Untracked files
-/// don't count: git refuses to overwrite them, and stops before changing
-/// anything.
+/// the pull, so they have to be committed or stashed first. A branch to
+/// switch to is fast-forwarded before the checkout moves, so the switch is
+/// the one step that touches the working tree. Untracked files don't count:
+/// git refuses to overwrite them, and refuses the switch, or the pull of
+/// the branch already checked out, before changing anything. The branch
+/// stays fast-forwarded then.
 ///
 /// Switching to the branch already checked out just pulls it. A branch
 /// that tracks nothing, or whose upstream is gone, is switched to and left
@@ -144,15 +146,21 @@ public struct BranchSwitch: Sendable {
         case .local(let branch):
             name = branch
             let refs = await repo.git(
-                "for-each-ref", "--format=%(refname)%09%(upstream)%09%(upstream:remotename)", "refs/heads/\(branch)"
+                "for-each-ref", "--format=%(refname)%09%(upstream)%09%(upstream:remotename)%09%(worktreepath)",
+                "refs/heads/\(branch)"
             )
             guard refs.ok else { throw ShellError(message: "git for-each-ref failed: \(refs.err)") }
             // The pattern matches the branches under `branch/` too. Not
             // trimmed: a branch that tracks nothing ends in empty fields.
             guard let fields = refs.stdout.split(separator: "\n")
                 .map({ $0.split(separator: "\t", omittingEmptySubsequences: false).map(String.init) })
-                .first(where: { $0.first == "refs/heads/\(branch)" }), fields.count == 3 else {
+                .first(where: { $0.first == "refs/heads/\(branch)" }), fields.count == 4 else {
                 throw ShellError(message: "there is no branch \(branch)")
+            }
+            // Git wouldn't switch to it, and fast-forwarding it would pull
+            // it under that worktree's feet.
+            if !fields[3].isEmpty, branch != current {
+                throw ShellError(message: "can't switch to \(branch): it's checked out at \(fields[3])")
             }
             upstream = fields[1].isEmpty ? nil : fields[1]
             // A branch tracking another local branch has the remote ".".
@@ -206,6 +214,16 @@ public struct BranchSwitch: Sendable {
         guard !Task.isCancelled else { throw CancellationError() }
 
         var outcome = Outcome(branch: name)
+        if switching, behind > 0, let ref = upstream {
+            // Only from the commit compared above: a branch moved since is
+            // left alone.
+            let old = try await repo.gitChecked("rev-parse", "refs/heads/\(name)")
+            let new = try await repo.gitChecked("rev-parse", ref)
+            try await repo.gitChecked("update-ref", "-m", "ghuppy: fast-forward to \(GitRepo.shortRef(ref))",
+                                      "refs/heads/\(name)", new, old)
+            await log("pulled \(GitRepo.commits(behind)) into \(name)")
+            outcome.pulled = behind
+        }
         if switching {
             switch target {
             case .local:
@@ -226,6 +244,8 @@ public struct BranchSwitch: Sendable {
             await log("\(name) is up to date with \(GitRepo.shortRef(ref))")
             return outcome
         }
+        // Pulled before the switch.
+        if switching { return outcome }
         let merge = await repo.git("merge", "--ff-only", ref)
         guard merge.ok else {
             throw ShellError(message: "\(name) can't fast-forward to \(GitRepo.shortRef(ref)): \(merge.err)")
