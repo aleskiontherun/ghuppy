@@ -200,7 +200,8 @@ public struct BranchSwitch: Sendable {
         let switching = name != current
         if switching || behind > 0,
            !(await repo.git("status", "--porcelain", "--untracked-files=no").out.isEmpty) {
-            throw ShellError(message: "the checkout has local changes, commit or stash them first")
+            throw ShellError(message: "can't \(switching ? "switch to" : "pull") \(name): "
+                + "the checkout has local changes, commit or stash them first")
         }
         guard !Task.isCancelled else { throw CancellationError() }
 

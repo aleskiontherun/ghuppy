@@ -16,6 +16,8 @@ final class RepoState: Identifiable {
     let name: String
     var github: GitHubRepo?
     var status = LocalStatus()
+    /// The branches the branch menu offers, nil until first listed.
+    var branches: Branches?
     /// The open pull requests, the ones in the merge queue last.
     var pullRequests: [PullRequest] = []
     /// The latest merged pull requests, the last merged first.
@@ -36,7 +38,7 @@ final class RepoState: Identifiable {
     var prsLoaded = false
     /// What the repository is doing right now, shown next to its name.
     var activity: String?
-    /// The outcome of the last cleanup.
+    /// The outcome of the last cleanup or branch switch.
     var result: (text: String, isError: Bool)?
     /// The repository's size on disk, nil until first measured.
     var size: Int64?
@@ -453,9 +455,11 @@ final class Workspace: Identifiable {
             repo.github = await repo.git.gitHubRepo()
         }
         let status = await repo.git.status()
+        let branches = await repo.git.branches()
         // A git that was terminated reports an empty status.
         guard !Task.isCancelled else { return }
         repo.status = status
+        if let branches { repo.branches = branches }
     }
 
     /// Reloads a repository's status and pull requests, for a refresh.
@@ -546,6 +550,14 @@ final class Workspace: Identifiable {
         track { await self.cleanup(repo, dryRun: dryRun) }
     }
 
+    /// Starts switching one repository to a branch, for Stop All to be able
+    /// to stop. It does nothing while the repository is being cleaned up or
+    /// switched already.
+    func startSwitch(of repo: RepoState, to target: BranchSwitch.Target) {
+        guard repo.activity == nil else { return }
+        track { await self.switchBranch(of: repo, to: target) }
+    }
+
     private func track(_ work: @escaping @MainActor () async -> Void) {
         stopped = false
         let id = UUID()
@@ -613,6 +625,19 @@ final class Workspace: Identifiable {
         // nested repositories and removed worktrees count elsewhere. A
         // stopped cleanup starts nothing more.
         if bulkActivity == nil, !Task.isCancelled { measureDisk() }
+    }
+
+    private func switchBranch(of repo: RepoState, to target: BranchSwitch.Target) async {
+        await perform("Switching…", on: repo) {
+            let outcome = try await BranchSwitch(repo: repo.git).run(to: target, log: self.logger(for: repo))
+            let pulled = outcome.pulled > 0 ? "pulled \(GitRepo.commits(outcome.pulled))" : nil
+            if outcome.switched {
+                return "Switched to \(outcome.branch)" + (pulled.map { ", \($0)" } ?? "")
+            }
+            return pulled.map { "\(outcome.branch): \($0)" } ?? "\(outcome.branch) is up to date"
+        }
+        // A new local branch counts.
+        if !Task.isCancelled, let counts = await repo.git.refCounts() { repo.refCounts = counts }
     }
 
     /// Runs `body`, which returns the text to show when it succeeds.
