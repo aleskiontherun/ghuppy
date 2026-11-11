@@ -3,11 +3,19 @@ import Observation
 import GhuppyCore
 
 struct LogLine: Identifiable {
+    /// How many lines a log keeps, the oldest going first.
+    static let limit = 5000
+
     let id = UUID()
     let date = Date()
     let repo: String?
     let text: String
     let isError: Bool
+
+    static func append(_ lines: [LogLine], to log: inout [LogLine]) {
+        log.append(contentsOf: lines)
+        if log.count > limit { log.removeFirst(log.count - limit) }
+    }
 }
 
 @MainActor @Observable
@@ -44,6 +52,10 @@ final class RepoState: Identifiable {
     var size: Int64?
     /// How many worktrees and branches it has, nil until first counted.
     var refCounts: RefCounts?
+    /// The actions its `ghuppy.yaml` offers.
+    var actions: [RepoAction] = []
+    /// Why its `ghuppy.yaml` can't be used, nil while it can or there is none.
+    var actionsError: String?
 
     nonisolated var id: URL { git.path }
 
@@ -89,6 +101,14 @@ final class Workspace: Identifiable {
     /// Whether Refresh, the settings and the author select can be used.
     var canAct: Bool { root != nil && bulkActivity == nil }
     var log: [LogLine] = []
+    /// The log tabs of the repository actions run on this tab, in the order
+    /// they were first run.
+    var actionLogs: [ActionLog] = []
+    /// The log tab on screen: an action's, or nil for the log itself.
+    var selectedLogID: ActionLog.ID?
+    var selectedActionLog: ActionLog? { actionLogs.first { $0.id == selectedLogID } }
+    /// The lines of the log tab on screen.
+    var visibleLog: [LogLine] { selectedActionLog?.lines ?? log }
     var scanning = false
     var bulkActivity: String?
     /// Whether anything on the tab is being brought up to date: a refresh, or
@@ -306,6 +326,7 @@ final class Workspace: Identifiable {
             Task { @MainActor in
                 self?.diskChanged()
                 self?.treeChanged(paths)
+                self?.reloadActions(changedIn: paths)
             }
         }.map { (root, $0) }
     }
@@ -451,6 +472,7 @@ final class Workspace: Identifiable {
     }
 
     func refreshLocal(_ repo: RepoState) async {
+        await loadActions(repo)
         if repo.github == nil {
             repo.github = await repo.git.gitHubRepo()
         }
@@ -460,6 +482,40 @@ final class Workspace: Identifiable {
         guard !Task.isCancelled else { return }
         repo.status = status
         if let branches { repo.branches = branches }
+    }
+
+    /// Reads the actions in the repository's `ghuppy.yaml` again. A file that
+    /// can't be used offers none, and says why in the log once.
+    private func loadActions(_ repo: RepoState) async {
+        let path = repo.git.path
+        let loaded = await Task.detached(priority: .utility) { RepoActions.load(from: path) }.value
+        switch loaded {
+        case let .success(actions):
+            if repo.actions != actions { repo.actions = actions }
+            repo.actionsError = nil
+        case let .failure(error):
+            if repo.actionsError != error.message { append(repo.name, error.message, isError: true) }
+            repo.actions = []
+            repo.actionsError = error.message
+        }
+    }
+
+    /// Something changed right inside some directories, which is how
+    /// a `ghuppy.yaml` written at a repository's root is reported: its
+    /// actions are read again, which costs no more than reading the file.
+    private func reloadActions(changedIn paths: [String]) {
+        let changed = Set(paths.map { raw in
+            var path = raw
+            while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+            return path
+        })
+        for repo in repos {
+            let path = repo.git.path.path
+            // FSEvents reports the real path, `/private` and all.
+            if changed.contains(path) || changed.contains("/private" + path) {
+                Task { await loadActions(repo) }
+            }
+        }
     }
 
     /// Reloads a repository's status and pull requests, for a refresh.
@@ -539,6 +595,39 @@ final class Workspace: Identifiable {
         track { await self.reload(repo) }
     }
 
+    /// Runs one of a repository's actions, in its log tab, which comes on
+    /// screen. One already running is only brought on screen.
+    func run(_ action: RepoAction, of repo: RepoState) {
+        let id = ActionLog.id(repo: repo.git.path, action: action.name)
+        let log = actionLogs.first { $0.id == id } ?? {
+            let log = ActionLog(repo: repo.git.path, repoName: repo.name, action: action)
+            actionLogs.append(log)
+            return log
+        }()
+        selectedLogID = log.id
+        log.start(action)
+    }
+
+    /// Whether the action is running in its log tab.
+    func isRunning(_ action: RepoAction, of repo: RepoState) -> Bool {
+        let id = ActionLog.id(repo: repo.git.path, action: action.name)
+        return actionLogs.first { $0.id == id }?.isRunning ?? false
+    }
+
+    /// Closes an action's log tab, once it has stopped running.
+    func closeLog(_ log: ActionLog) {
+        guard !log.isRunning, let index = actionLogs.firstIndex(where: { $0.id == log.id }) else { return }
+        actionLogs.remove(at: index)
+        if selectedLogID == log.id {
+            selectedLogID = actionLogs.isEmpty ? nil : actionLogs[min(index, actionLogs.count - 1)].id
+        }
+    }
+
+    /// Stops every action running on the tab, for a tab that's closing.
+    func stopActions() {
+        actionLogs.forEach { $0.stop() }
+    }
+
     /// Starts `cleanupAll`, for Stop All to be able to stop.
     func startCleanupAll(includingUnpinned: Bool = false) {
         track { await self.cleanupAll(includingUnpinned: includingUnpinned) }
@@ -571,7 +660,9 @@ final class Workspace: Identifiable {
     /// cancelled task can't start them again, so a cleanup deletes nothing
     /// more from here on. What it already deleted stays deleted.
     func stopAll() {
-        guard isRefreshing || measuringSize || !cleanups.isEmpty || changeCheck != nil else { return }
+        let actionsRunning = actionLogs.contains(where: \.isRunning)
+        guard isRefreshing || measuringSize || !cleanups.isEmpty || changeCheck != nil || actionsRunning else { return }
+        stopActions()
         refreshSlot.cancel()
         changeCheck?.cancel()
         cleanups.values.forEach { $0.cancel() }
@@ -672,11 +763,13 @@ final class Workspace: Identifiable {
     }
 
     func append(_ repo: String?, _ text: String, isError: Bool = false) {
-        log.append(LogLine(repo: repo, text: text, isError: isError))
-        if log.count > 5000 { log.removeFirst(log.count - 5000) }
+        LogLine.append([LogLine(repo: repo, text: text, isError: isError)], to: &log)
     }
 
-    func clearLog() { log.removeAll() }
+    /// Clears the log tab on screen.
+    func clearLog() {
+        if let selectedActionLog { selectedActionLog.clear() } else { log.removeAll() }
+    }
 
     /// Runs `body` for each repository, a few at a time: enough to overlap
     /// network round-trips without starting a hundred `git fetch`es at once.

@@ -4,6 +4,7 @@ import SwiftUI
 
 struct RepoCard: View {
     @Environment(Workspace.self) private var model
+    @AppStorage("showLog") private var showLog = true
     let repo: RepoState
 
     var body: some View {
@@ -112,6 +113,7 @@ struct RepoCard: View {
                     .frame(maxWidth: 260, alignment: .trailing)
             }
             HStack(spacing: 4) {
+                actionButtons
                 // Not disabled while it runs, which would dim the animation.
                 Button {
                     if repo.activity == nil { model.startCleanup(of: repo) }
@@ -170,6 +172,58 @@ struct RepoCard: View {
             set: { _ in model.startSwitch(of: repo, to: .local(branch.name)) }
         ))
         .disabled(branch.worktree != nil)
+    }
+
+    /// The actions in the repository's `ghuppy.yaml`, apart from the
+    /// buttons every repository has.
+    @ViewBuilder
+    private var actionButtons: some View {
+        if let error = repo.actionsError {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(Color.warmRed)
+                .frame(width: 16, height: 16)
+                .padding(.horizontal, 6)
+                .tooltip(error)
+        }
+        ForEach(repo.actions) { action in
+            actionButton(action)
+        }
+        if repo.actionsError != nil || !repo.actions.isEmpty {
+            Rectangle()
+                .fill(Color.muted)
+                .frame(width: 1, height: 14)
+                .padding(.horizontal, 3)
+        }
+    }
+
+    /// Runs the action and shows its log tab, or only shows the tab while
+    /// it's running, when the icon turns into a spinner.
+    private func actionButton(_ action: RepoAction) -> some View {
+        Button {
+            showLog = true
+            model.run(action, of: repo)
+        } label: {
+            Group {
+                if model.isRunning(action, of: repo) {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: action.symbol)
+                        .foregroundStyle(Color.secondary)
+                }
+            }
+            .frame(width: 16, height: 16)
+        }
+        .buttonStyle(.hoverHighlight)
+        .accessibilityLabel(action.name)
+        .tooltip([TooltipLine(text: action.name), TooltipLine(text: Self.command(action.run))])
+    }
+
+    /// The command, a few lines of it at most, for the action's tooltip. One
+    /// tooltip line, which a command repeating a line can't trip up.
+    private static func command(_ run: String) -> String {
+        let lines = run.split(separator: "\n", omittingEmptySubsequences: false)
+        let shown = lines.prefix(5).map { "$ \($0)" }
+        return (lines.count > shown.count ? shown + ["…"] : shown).joined(separator: "\n")
     }
 
     private var branchLine: some View {
