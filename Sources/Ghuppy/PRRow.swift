@@ -20,6 +20,7 @@ struct PRRow: View {
                         .truncationMode(.tail)
                 }
             }
+            .tooltip(pr.headRefName)
 
             Spacer(minLength: 8)
 

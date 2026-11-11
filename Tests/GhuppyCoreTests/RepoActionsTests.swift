@@ -134,15 +134,25 @@ struct ActionProcessTests {
     @Test func cancellingTerminatesEverythingItStarted() async throws {
         let marker = cwd.appendingPathComponent("ghuppy-action-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: marker) }
-        let started = ContinuousClock.now
         // The child outlives a shell that only passes its SIGTERM on to it
-        // when it's in the same process group.
-        let task = Task { await run("echo started; (sleep 2; touch '\(marker.path)') & wait") }
-        try await Task.sleep(for: .milliseconds(300))
+        // when it's in the same process group. It touches the marker 4
+        // seconds after "started", before the SIGKILL that follows the
+        // cancel by 5, so only the SIGTERM reaching it keeps the marker away.
+        let (ready, signal) = AsyncStream<Void>.makeStream()
+        let task = Task {
+            for await event in ActionProcess.run(
+                "echo started; (sleep 4; touch '\(marker.path)') & wait", in: cwd, shell: "/bin/sh"
+            ) {
+                if case .output = event { signal.yield() }
+            }
+        }
+        // Cancelled once the child is running, not after a fixed wait, and
+        // nothing is timed: a busy CI runner can stall every test for
+        // seconds. A stream that ignored the cancel would leave the marker.
+        for await _ in ready { break }
         task.cancel()
         _ = await task.value
-        #expect(ContinuousClock.now - started < .seconds(2))
-        try await Task.sleep(for: .seconds(3))
+        try await Task.sleep(for: .seconds(5))
         #expect(!FileManager.default.fileExists(atPath: marker.path))
     }
 
