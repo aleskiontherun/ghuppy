@@ -353,7 +353,7 @@ public enum PullRequests {
 
     /// `prs` with their merge queue entries and workflow approvals filled in,
     /// the ones ready to merge moved to the front, and the queued ones to the
-    /// end, the next to merge first.
+    /// end, the next to merge last.
     public static func applying(
         queue: [Int: PullRequest.QueueEntry], awaitingApproval: Set<Int>, to prs: [PullRequest]
     ) -> [PullRequest] {
@@ -363,7 +363,7 @@ public enum PullRequests {
             prs[index].checksAwaitApproval = awaitingApproval.contains(prs[index].number)
         }
         let queued = prs.filter { $0.mergeQueue != nil }
-            .sorted { ($0.mergeQueue?.position ?? 0) < ($1.mergeQueue?.position ?? 0) }
+            .sorted { ($0.mergeQueue?.position ?? 0) > ($1.mergeQueue?.position ?? 0) }
         let unqueued = prs.filter { $0.mergeQueue == nil }
         return unqueued.filter(\.isReadyToMerge) + unqueued.filter { !$0.isReadyToMerge } + queued
     }

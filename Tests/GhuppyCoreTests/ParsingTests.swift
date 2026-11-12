@@ -336,14 +336,14 @@ import Testing
         }.joined(separator: ",") + "]")
     }
 
-    @Test func queuedGoLastInQueueOrder() throws {
+    @Test func queuedGoLastTheNextToMergeLast() throws {
         let ordered = PullRequests.applying(queue: [
             5: .init(position: 2, state: "QUEUED"),
             4: .init(position: 3, state: "QUEUED"),
             2: .init(position: 1, state: "AWAITING_CHECKS"),
         ], awaitingApproval: [], to: try prs([5, 4, 3, 2, 1]))
-        #expect(ordered.map(\.number) == [3, 1, 2, 5, 4])
-        #expect(ordered.map(\.mergeQueue?.position) == [nil, nil, 1, 2, 3])
+        #expect(ordered.map(\.number) == [3, 1, 4, 5, 2])
+        #expect(ordered.map(\.mergeQueue?.position) == [nil, nil, 3, 2, 1])
     }
 
     @Test func readyGoFirstKeepingTheirOrder() throws {
