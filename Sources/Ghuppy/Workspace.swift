@@ -26,7 +26,7 @@ final class RepoState: Identifiable {
     var status = LocalStatus()
     /// The branches the branch menu offers, nil until first listed.
     var branches: Branches?
-    /// The open pull requests, the ones in the merge queue last.
+    /// The open pull requests, the ones in the merge queue last, the next to merge at the very end.
     var pullRequests: [PullRequest] = []
     /// The latest merged pull requests, the last merged first.
     var mergedPullRequests: [PullRequest] = []

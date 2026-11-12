@@ -5,8 +5,8 @@
 A small macOS app for keeping a folder full of git checkouts tidy. Pick a
 working directory, and Ghuppy lists every repository under it, with a link
 to each one on GitHub and its pull requests underneath: the ones ready to
-merge, then the other open ones, then the ones in the merge queue, then the
-last 3 merged, the last merged first.
+merge, then the other open ones, then the ones in the merge queue, the next to
+merge last, then the last 3 merged, the last merged first.
 
 - **Ghuppy!** — `git fetch --prune`, then delete local branches whose work has
   actually landed and the worktrees left behind with them, then a
