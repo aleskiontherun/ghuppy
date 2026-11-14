@@ -6,12 +6,14 @@ import Foundation
 /// rate limit. Reloading the pull requests themselves takes GraphQL, which
 /// can't answer that way, so the reload only happens once this says so.
 ///
-/// Two answers are watched. The pull requests ordered by their last update,
-/// whose first changes whenever any of them is opened, pushed to, reviewed,
-/// edited, closed or merged. And the latest workflow runs, which change as
-/// checks start and finish and as the merge queue tests what it holds:
-/// neither moves a pull request's update time. Checks reported by anything
-/// other than GitHub Actions show up at the next refresh.
+/// Three answers are watched. The pull requests ordered by their last
+/// update, whose first changes whenever any of them is opened, pushed to,
+/// reviewed, edited, closed or merged. The latest workflow runs, which change
+/// as checks start and finish and as the merge queue tests what it holds:
+/// neither moves a pull request's update time. And the issues ordered the
+/// same way, for the ones opened, edited, commented on or closed, as the
+/// reload brings them too. Checks reported by anything other than GitHub
+/// Actions show up at the next refresh.
 public actor PullRequestChanges {
     public static let shared = PullRequestChanges()
 
@@ -26,6 +28,7 @@ public actor PullRequestChanges {
         [
             "repos/\(repo.slug)/pulls?state=all&sort=updated&direction=desc&per_page=1",
             "repos/\(repo.slug)/actions/runs?per_page=20",
+            "repos/\(repo.slug)/issues?state=all&sort=updated&direction=desc&per_page=1",
         ]
     }
 

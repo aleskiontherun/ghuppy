@@ -30,9 +30,15 @@ final class RepoState: Identifiable {
     var pullRequests: [PullRequest] = []
     /// The latest merged pull requests, the last merged first.
     var mergedPullRequests: [PullRequest] = []
+    /// The open issues, the newest first.
+    var issues: [Issue] = []
+    /// The latest closed issues, the last closed first.
+    var closedIssues: [Issue] = []
+    /// Whether the repository has issues turned on.
+    var issuesEnabled = true
     var prError: String?
-    /// Why the merge queue and merged pull requests last failed to load, nil
-    /// once they load again.
+    /// Why the merge queue, merged pull requests and issues last failed to
+    /// load, nil once they load again.
     var extrasError: String?
     var loadingPRs = false
     /// How many refreshes are reloading the repository right now: the tab's
@@ -44,6 +50,8 @@ final class RepoState: Identifiable {
     /// Later reloads stay out of sight. Even a refresh of only the pinned
     /// repositories loads the ones still without it.
     var prsLoaded = false
+    /// Whether the issues have loaded at least once, as `prsLoaded` for them.
+    var issuesLoaded = false
     /// Whether what the card shows came from the last run and has yet to be
     /// loaded again in this one. Even a refresh of only the pinned
     /// repositories loads these, as it does the ones never loaded.
@@ -78,6 +86,10 @@ final class RepoState: Identifiable {
         pullRequests = saved.pullRequests
         mergedPullRequests = saved.mergedPullRequests
         prsLoaded = saved.prsLoaded
+        issues = saved.issues
+        closedIssues = saved.closedIssues
+        issuesEnabled = saved.issuesEnabled
+        issuesLoaded = saved.issuesLoaded
         result = saved.result.map { ($0.text, $0.isError) }
         size = saved.size
         refCounts = saved.refCounts
@@ -88,6 +100,7 @@ final class RepoState: Identifiable {
         WorkspaceSnapshot.Repo(
             path: git.path, name: name, github: github, status: status, branches: branches,
             pullRequests: pullRequests, mergedPullRequests: mergedPullRequests, prsLoaded: prsLoaded,
+            issues: issues, closedIssues: closedIssues, issuesEnabled: issuesEnabled, issuesLoaded: issuesLoaded,
             result: result.map { WorkspaceSnapshot.Result(text: $0.text, isError: $0.isError) },
             size: size, refCounts: refCounts)
     }
@@ -152,13 +165,19 @@ final class Workspace: Identifiable {
         didSet { onSavedStateChange?() }
     }
     var dryRun = false
-    /// The author whose pull requests are listed, nil for everyone's.
+    /// Whether the cards list issues in place of pull requests.
+    var showsIssues: Bool {
+        didSet { onSavedStateChange?() }
+    }
+    /// The author whose pull requests or issues are listed, nil for everyone's.
     var authorFilter: String? {
         didSet { onSavedStateChange?() }
     }
-    /// Who the author select offers.
+    /// Who the author select offers: the authors of what the cards list.
     var authors: [String] {
-        PullRequests.authors(of: repos.flatMap { $0.pullRequests + $0.mergedPullRequests }, selected: authorFilter)
+        showsIssues
+            ? PullRequests.authors(of: repos.flatMap { $0.issues + $0.closedIssues }, selected: authorFilter)
+            : PullRequests.authors(of: repos.flatMap { $0.pullRequests + $0.mergedPullRequests }, selected: authorFilter)
     }
     /// The working directory's size on disk, nil until first measured.
     var directorySize: Int64?
@@ -207,9 +226,10 @@ final class Workspace: Identifiable {
         [("git", Shell.gitPath), ("gh", Shell.ghPath)].compactMap { $0.1 == nil ? $0.0 : nil }
     }
 
-    init(root: URL? = nil, pinnedOnly: Bool = false, authorFilter: String? = nil) {
+    init(root: URL? = nil, pinnedOnly: Bool = false, showsIssues: Bool = false, authorFilter: String? = nil) {
         self.root = root
         self.pinnedOnly = pinnedOnly
+        self.showsIssues = showsIssues
         self.authorFilter = authorFilter
     }
 
@@ -579,9 +599,9 @@ final class Workspace: Identifiable {
         await refreshPRs(repo)
     }
 
-    /// Reloads a repository's pull requests. A failure is logged when it
-    /// starts, not on every reload that goes on to meet it. GitHub is asked
-    /// where they stand first, so `watchPullRequests` catches whatever
+    /// Reloads a repository's pull requests and issues. A failure is logged
+    /// when it starts, not on every reload that goes on to meet it. GitHub is
+    /// asked where they stand first, so `watchPullRequests` catches whatever
     /// changes after the reload, unless the caller has just asked and passes
     /// what it saw as `look`: the reload is then one `watchPullRequests`
     /// started, and nothing shows it loading.
@@ -592,8 +612,12 @@ final class Workspace: Identifiable {
         guard let github = repo.github else {
             repo.pullRequests = []
             repo.mergedPullRequests = []
+            repo.issues = []
+            repo.closedIssues = []
             repo.prError = nil
+            repo.extrasError = nil
             repo.prsLoaded = true
+            repo.issuesLoaded = true
             repo.restored = false
             return
         }
@@ -602,42 +626,59 @@ final class Workspace: Identifiable {
         defer { if !quiet { repo.loadingPRs = false } }
         // Whether it changed doesn't matter: this reload is what's shown.
         let seen = if let look { look } else { try? await PullRequestChanges.shared.look(github, cwd: repo.git.path) }
-        // Whether a reload cut short is left for `watchPullRequests` to try
-        // again, by not remembering what the look saw.
-        var retry = false
         do {
-            var prs = try await PullRequests.open(in: github, cwd: repo.git.path)
-            do {
-                let extras = try await PullRequests.extras(in: github, cwd: repo.git.path)
-                prs = PullRequests.applying(queue: extras.queue, awaitingApproval: extras.awaitingApproval, to: prs)
+            // Each loads whether or not the other could: the issues come
+            // with the extras, and a tab showing them needs nothing else.
+            let open = try await loading(repo, error: \.prError, prefix: "pull requests: ") {
+                try await PullRequests.open(in: github, cwd: repo.git.path)
+            }
+            let extras = try await loading(repo, error: \.extrasError) {
+                try await PullRequests.extras(in: github, cwd: repo.git.path)
+            }
+            if let extras {
                 repo.mergedPullRequests = extras.merged
-                repo.extrasError = nil
-            } catch let error where !(error is RateLimitError || error is CancellationError) {
-                if repo.extrasError != error.localizedDescription {
-                    append(repo.name, error.localizedDescription, isError: true)
-                }
-                repo.extrasError = error.localizedDescription
+                repo.issues = extras.openIssues
+                repo.closedIssues = extras.closedIssues
+                repo.issuesEnabled = extras.issuesEnabled
+                repo.issuesLoaded = true
             }
-            repo.pullRequests = prs
-            repo.prsLoaded = true
-            repo.restored = false
-            repo.prError = nil
-        } catch is RateLimitError {
-            // The status bar says so, once for every repository, and what's
-            // on screen stays until a reload gets through.
-            retry = true
-        } catch is CancellationError {
-            // The refresh taking over reloads it.
-            retry = true
+            if let open {
+                repo.pullRequests = extras.map {
+                    PullRequests.applying(queue: $0.queue, awaitingApproval: $0.awaitingApproval, to: open)
+                } ?? open
+                repo.prsLoaded = true
+                repo.restored = false
+            }
+            // A failure isn't retried: one that lasts would reload every
+            // time. It's on the card, and Refresh tries again.
+            if let seen { await PullRequestChanges.shared.remember(seen) }
         } catch {
-            // Not retried: a failure that lasts would reload every time. It's
-            // on the card, and Refresh tries again.
-            if repo.prError != error.localizedDescription {
-                append(repo.name, "pull requests: \(error.localizedDescription)", isError: true)
-            }
-            repo.prError = error.localizedDescription
+            // A rate limit: the status bar says so, once for every
+            // repository, and what's on screen stays until a reload gets
+            // through. Or a cancellation, and the refresh taking over reloads
+            // it. Either is left for `watchPullRequests` to try again, by not
+            // remembering what the look saw.
         }
-        if !retry, let seen { await PullRequestChanges.shared.remember(seen) }
+    }
+
+    /// What `load` loaded, nil when it failed, with the failure kept at
+    /// `error` and logged when it starts. A rate limit or a cancellation is
+    /// thrown instead, as it stops the whole reload.
+    private func loading<Value>(
+        _ repo: RepoState, error: ReferenceWritableKeyPath<RepoState, String?>, prefix: String = "",
+        _ load: () async throws -> Value
+    ) async throws -> Value? {
+        do {
+            let value = try await load()
+            repo[keyPath: error] = nil
+            return value
+        } catch let failure where !(failure is RateLimitError || failure is CancellationError) {
+            if repo[keyPath: error] != failure.localizedDescription {
+                append(repo.name, prefix + failure.localizedDescription, isError: true)
+            }
+            repo[keyPath: error] = failure.localizedDescription
+            return nil
+        }
     }
 
     // MARK: Actions

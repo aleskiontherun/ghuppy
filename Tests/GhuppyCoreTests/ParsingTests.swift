@@ -270,9 +270,22 @@ import Testing
         """
     }
 
-    func extras(open: String = "", merged: [String] = []) throws -> PullRequests.Extras {
+    func issue(_ number: Int, closed closedAt: String? = nil, reason: String? = nil,
+               updated: String = "2026-11-01T00:00:00Z") -> String {
+        """
+        {"number": \(number), "title": "Issue \(number)", "url": "https://github.com/octo/hello/issues/\(number)",
+         "author": {"login": "octo"}, "updatedAt": "\(updated)",
+         "closedAt": \(closedAt.map { "\"\($0)\"" } ?? "null"), "stateReason": \(reason.map { "\"\($0)\"" } ?? "null")}
+        """
+    }
+
+    func extras(open: String = "", merged: [String] = [], issuesEnabled: Bool = true,
+                openIssues: [String] = [], closedIssues: [String] = []) throws -> PullRequests.Extras {
         try PullRequests.decodeExtras("""
-        {"open": {"nodes": [\(open)]}, "merged": {"nodes": [\(merged.joined(separator: ","))]}}
+        {"open": {"nodes": [\(open)]}, "merged": {"nodes": [\(merged.joined(separator: ","))]},
+         "hasIssuesEnabled": \(issuesEnabled),
+         "openIssues": {"nodes": [\(openIssues.joined(separator: ","))]},
+         "closedIssues": {"nodes": [\(closedIssues.joined(separator: ","))]}}
         """)
     }
 
@@ -322,6 +335,58 @@ import Testing
     @Test func fewerMergedThanShown() throws {
         #expect(try extras(merged: [merged(1, at: "2026-10-30T00:00:00Z")]).merged.count == 1)
         #expect(try extras().merged.isEmpty)
+    }
+
+    @Test func openIssuesKeepTheirOrder() throws {
+        let issues = try extras(openIssues: [issue(9), issue(4), issue(7)]).openIssues
+        #expect(issues.map(\.number) == [9, 4, 7])
+        #expect(issues.map(\.label) == [.open, .open, .open])
+        #expect(issues[0].authorLogin == "octo")
+        #expect(issues[0].url == URL(string: "https://github.com/octo/hello/issues/9"))
+    }
+
+    @Test func closedIssuesAreTheLastThreeByCloseTimeNotUpdateTime() throws {
+        let closed = try extras(closedIssues: [
+            // Closed long ago, commented on since: first in update order.
+            issue(1, closed: "2026-01-01T00:00:00Z", updated: "2026-11-03T00:00:00Z"),
+            issue(2, closed: "2026-10-30T00:00:00Z"),
+            issue(3, closed: "2026-10-31T00:00:00Z"),
+            issue(4, closed: "2026-10-29T00:00:00Z"),
+            issue(5, closed: "2026-10-28T00:00:00Z"),
+        ]).closedIssues
+        #expect(closed.map(\.number) == [3, 2, 4])
+        #expect(closed[0].closedAt == ISO8601DateFormatter().date(from: "2026-10-31T00:00:00Z"))
+    }
+
+    @Test func issuesTurnedOff() throws {
+        #expect(try extras(issuesEnabled: false).issuesEnabled == false)
+        #expect(try extras().issuesEnabled)
+    }
+}
+
+@Suite struct IssueLabels {
+    func label(closed: Bool, reason: String?) throws -> GhuppyCore.Issue.Label {
+        let json = """
+        [{"number": 1, "title": "t", "url": "https://github.com/octo/hello/issues/1", "author": null,
+          "updatedAt": "2026-11-01T00:00:00Z", "closedAt": \(closed ? #""2026-11-01T00:00:00Z""# : "null"),
+          "stateReason": \(reason.map { "\"\($0)\"" } ?? "null")}]
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try #require(decoder.decode([GhuppyCore.Issue].self, from: Data(json.utf8)).first).label
+    }
+
+    @Test func openUntilClosed() throws {
+        #expect(try label(closed: false, reason: nil) == .open)
+        // Reopened since it was last closed.
+        #expect(try label(closed: false, reason: "REOPENED") == .open)
+    }
+
+    @Test func closedForItsReason() throws {
+        #expect(try label(closed: true, reason: "COMPLETED") == .closed)
+        #expect(try label(closed: true, reason: nil) == .closed)
+        #expect(try label(closed: true, reason: "NOT_PLANNED") == .notPlanned)
+        #expect(try label(closed: true, reason: "DUPLICATE") == .duplicate)
     }
 }
 
@@ -390,7 +455,20 @@ import Testing
     @Test func selectedAuthorStaysOnOfferWithNoPRsLeft() throws {
         #expect(PullRequests.authors(of: try prs(["zoe"]), selected: "bob") == ["bob", "zoe"])
         #expect(PullRequests.authors(of: try prs(["zoe"]), selected: "zoe") == ["zoe"])
-        #expect(PullRequests.authors(of: [], selected: "bob") == ["bob"])
+        #expect(PullRequests.authors(of: [PullRequest](), selected: "bob") == ["bob"])
+    }
+
+    @Test func issuesAreFilteredTheSameWay() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let issues = try decoder.decode([GhuppyCore.Issue].self, from: Data("""
+        [{"number": 1, "title": "t", "url": "https://github.com/octo/hello/issues/1",
+          "author": {"login": "zoe"}, "updatedAt": "2026-11-01T00:00:00Z"},
+         {"number": 2, "title": "t", "url": "https://github.com/octo/hello/issues/2",
+          "author": {"login": "bob"}, "updatedAt": "2026-11-01T00:00:00Z"}]
+        """.utf8))
+        #expect(PullRequests.authors(of: issues) == ["bob", "zoe"])
+        #expect(PullRequests.filter(issues, author: "zoe").map(\.number) == [1])
     }
 
     @Test func filterKeepsTheOrder() throws {

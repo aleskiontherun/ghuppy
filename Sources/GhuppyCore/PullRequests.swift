@@ -1,6 +1,6 @@
 import Foundation
 
-public struct PullRequest: Sendable, Identifiable, Codable, Equatable {
+public struct PullRequest: Sendable, Identifiable, Codable, Equatable, Authored {
     public struct Author: Sendable, Codable, Equatable {
         public let login: String
     }
@@ -51,14 +51,6 @@ public struct PullRequest: Sendable, Identifiable, Codable, Equatable {
     }
 
     public var id: Int { number }
-
-    /// Who opened the PR, nil when GitHub no longer knows. A bot reads the
-    /// same however the PR was loaded: `gh pr list` calls it `app/dependabot`
-    /// where GraphQL says `dependabot`.
-    public var authorLogin: String? {
-        guard let login = author?.login, !login.isEmpty else { return nil }
-        return login.hasPrefix("app/") ? String(login.dropFirst(4)) : login
-    }
 
     public enum Checks: Sendable {
         case none, passing, pending, awaitingApproval, failing
@@ -262,9 +254,9 @@ public enum PullRequests {
         return try decode(result.stdout)
     }
 
-    /// What `gh pr list` can't say about the open PRs, and the latest merged
-    /// ones. Kept apart from `open` so a failed lookup costs only these, not
-    /// the list.
+    /// What `gh pr list` can't say about the open PRs, the latest merged
+    /// ones, and the issues. Kept apart from `open` so a failed lookup costs
+    /// only these, not the list.
     public struct Extras: Sendable, Equatable {
         /// The merge queue entries of the open PRs, by PR number.
         public let queue: [Int: PullRequest.QueueEntry]
@@ -272,20 +264,30 @@ public enum PullRequests {
         public let awaitingApproval: Set<Int>
         /// The last merged first.
         public let merged: [PullRequest]
+        /// Whether the repository has issues turned on. With them off, it has
+        /// none to list, open or closed.
+        public let issuesEnabled: Bool
+        /// The newest first.
+        public let openIssues: [Issue]
+        /// The last closed first.
+        public let closedIssues: [Issue]
     }
 
-    /// How many merged PRs a repository shows.
-    static let mergedShown = 3
-    /// How many recently updated merged PRs are searched for those. GitHub
-    /// can't order by merge time, but a PR is never updated before it's
-    /// merged, so the latest merges are near the top of this order, behind
-    /// only the older PRs that were touched since.
-    static let mergedSearched = 30
+    /// How many merged PRs, and how many closed issues, a repository shows.
+    static let latestShown = 3
+    /// How many recently updated merged PRs, and closed issues, are searched
+    /// for those. GitHub can't order by merge or close time, but nothing is
+    /// updated before it's merged or closed, so the latest are near the top
+    /// of this order, behind only the older ones that were touched since.
+    static let latestSearched = 30
 
     /// Asks for the same 100 open PRs `gh pr list` lists: the newest first.
-    /// One query for both, as every repository's PRs are reloaded on each
-    /// refresh and every `gh` call counts against the GitHub rate limit.
+    /// One query for these and the issues, as every repository's PRs are
+    /// reloaded on each refresh and every `gh` call counts against the GitHub
+    /// rate limit. The issues come along whether or not the tab shows them,
+    /// for less than another call would cost.
     public static func extras(in repo: GitHubRepo, cwd: URL) async throws -> Extras {
+        let issueFields = "number title url author { login } updatedAt closedAt stateReason"
         let query = """
         query($owner: String!, $name: String!) {
           repository(owner: $owner, name: $name) {
@@ -296,8 +298,15 @@ public enum PullRequests {
                 commits(last: 1) { nodes { commit { checkSuites(first: 100) { nodes { conclusion } } } } }
               }
             }
-            merged: pullRequests(states: MERGED, first: \(mergedSearched), orderBy: {field: UPDATED_AT, direction: DESC}) {
+            merged: pullRequests(states: MERGED, first: \(latestSearched), orderBy: {field: UPDATED_AT, direction: DESC}) {
               nodes { number title url isDraft author { login } headRefName updatedAt mergedAt }
+            }
+            hasIssuesEnabled
+            openIssues: issues(states: OPEN, first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
+              nodes { \(issueFields) }
+            }
+            closedIssues: issues(states: CLOSED, first: \(latestSearched), orderBy: {field: UPDATED_AT, direction: DESC}) {
+              nodes { \(issueFields) }
             }
           }
         }
@@ -307,7 +316,7 @@ public enum PullRequests {
             "--jq", ".data.repository",
         ], cwd: cwd)
         guard result.ok else {
-            throw ShellError(message: "merge queue, workflow approval and merged pull requests lookup failed: \(result.err)")
+            throw ShellError(message: "merge queue, merged pull requests and issues lookup failed: \(result.err)")
         }
         return try decodeExtras(result.stdout)
     }
@@ -341,6 +350,9 @@ public enum PullRequests {
         struct Response: Decodable {
             let open: Connection<OpenNode>
             let merged: Connection<PullRequest>
+            let hasIssuesEnabled: Bool
+            let openIssues: Connection<Issue>
+            let closedIssues: Connection<Issue>
         }
         let response = try decoder.decode(Response.self, from: Data(json.utf8))
         let queue = Dictionary(
@@ -348,7 +360,10 @@ public enum PullRequests {
             uniquingKeysWith: { first, _ in first })
         let awaitingApproval = Set(response.open.nodes.filter(\.awaitsApproval).map(\.number))
         let merged = response.merged.nodes.sorted { ($0.mergedAt ?? .distantPast) > ($1.mergedAt ?? .distantPast) }
-        return Extras(queue: queue, awaitingApproval: awaitingApproval, merged: Array(merged.prefix(mergedShown)))
+        let closed = response.closedIssues.nodes.sorted { ($0.closedAt ?? .distantPast) > ($1.closedAt ?? .distantPast) }
+        return Extras(queue: queue, awaitingApproval: awaitingApproval, merged: Array(merged.prefix(latestShown)),
+                      issuesEnabled: response.hasIssuesEnabled, openIssues: response.openIssues.nodes,
+                      closedIssues: Array(closed.prefix(latestShown)))
     }
 
     /// `prs` with their merge queue entries and workflow approvals filled in,
@@ -368,18 +383,18 @@ public enum PullRequests {
         return unqueued.filter(\.isReadyToMerge) + unqueued.filter { !$0.isReadyToMerge } + queued
     }
 
-    /// The authors of `prs` and `selected`, in alphabetical order. `selected`
-    /// is there for an author whose PRs have since gone from the list: a
-    /// select can't show a choice it doesn't offer.
-    public static func authors(of prs: [PullRequest], selected: String? = nil) -> [String] {
-        Set(prs.compactMap(\.authorLogin) + [selected].compactMap { $0 })
+    /// The authors of `items` and `selected`, in alphabetical order.
+    /// `selected` is there for an author whose PRs or issues have since gone
+    /// from the list: a select can't show a choice it doesn't offer.
+    public static func authors(of items: [some Authored], selected: String? = nil) -> [String] {
+        Set(items.compactMap(\.authorLogin) + [selected].compactMap { $0 })
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
-    /// The PRs `author` opened, or all of them when `author` is nil.
-    public static func filter(_ prs: [PullRequest], author: String?) -> [PullRequest] {
-        guard let author else { return prs }
-        return prs.filter { $0.authorLogin == author }
+    /// The PRs or issues `author` opened, or all of them when `author` is nil.
+    public static func filter<Item: Authored>(_ items: [Item], author: String?) -> [Item] {
+        guard let author else { return items }
+        return items.filter { $0.authorLogin == author }
     }
 
     public static func decode(_ json: String) throws -> [PullRequest] {

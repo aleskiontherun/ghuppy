@@ -81,6 +81,12 @@ struct GhuppyApp: App {
                     .keyboardShortcut("d", modifiers: [.command, .shift])
                 }
                 .disabled(!tabs.selected.canAct)
+                // Not disabled, as the author select isn't: it only changes what is shown.
+                Toggle("Show Issues", isOn: Binding(
+                    get: { tabs.selected.showsIssues },
+                    set: { tabs.selected.showsIssues = $0 }
+                ))
+                .keyboardShortcut("i")
                 Button("Choose Author…") { tabs.authorMenuRequests += 1 }
                     .keyboardShortcut("u")
                 Divider()

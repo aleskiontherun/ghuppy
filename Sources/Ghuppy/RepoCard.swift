@@ -13,8 +13,10 @@ struct RepoCard: View {
                 .padding(12)
             if repo.github != nil {
                 Divider()
-                pullRequests
-                    .padding(.vertical, 6)
+                Group {
+                    if model.showsIssues { issues } else { pullRequests }
+                }
+                .padding(.vertical, 6)
             }
         }
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
@@ -254,29 +256,7 @@ struct RepoCard: View {
         let open = PullRequests.filter(repo.pullRequests, author: model.authorFilter)
         let merged = PullRequests.filter(repo.mergedPullRequests, author: model.authorFilter)
         return VStack(alignment: .leading, spacing: 0) {
-            // A failed reload keeps the list it couldn't replace on screen.
-            if let error = repo.prError {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.callout)
-                    .foregroundStyle(Color.warmRed)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-            } else if open.isEmpty {
-                HStack(spacing: 6) {
-                    if repo.prsLoaded {
-                        Text(model.authorFilter.map { "No open pull requests by \($0)" } ?? "No open pull requests")
-                    } else if model.rateLimitedUntil != nil {
-                        Text("Waiting for GitHub's rate limit")
-                    } else {
-                        ProgressView().controlSize(.mini)
-                        Text("Loading pull requests…")
-                    }
-                }
-                .font(.callout)
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-            }
+            status(error: repo.prError, empty: open.isEmpty, loaded: repo.prsLoaded, noun: "pull requests")
             ForEach(open) { pr in
                 PRRow(pr: pr)
             }
@@ -284,5 +264,56 @@ struct RepoCard: View {
                 PRRow(pr: pr)
             }
         }
+    }
+
+    private var issues: some View {
+        let open = PullRequests.filter(repo.issues, author: model.authorFilter)
+        let closed = PullRequests.filter(repo.closedIssues, author: model.authorFilter)
+        return VStack(alignment: .leading, spacing: 0) {
+            if repo.issuesLoaded && !repo.issuesEnabled && repo.extrasError == nil {
+                placeholder { Text("Issues are turned off") }
+            } else {
+                status(error: repo.extrasError, empty: open.isEmpty, loaded: repo.issuesLoaded, noun: "issues")
+            }
+            ForEach(open) { issue in
+                IssueRow(issue: issue)
+            }
+            ForEach(closed) { issue in
+                IssueRow(issue: issue)
+            }
+        }
+    }
+
+    /// Why the list is short of what it should show, if it is: an error, or
+    /// nothing open, or nothing loaded yet. A failed reload keeps the list it
+    /// couldn't replace on screen.
+    @ViewBuilder
+    private func status(error: String?, empty: Bool, loaded: Bool, noun: String) -> some View {
+        if let error {
+            Label(error, systemImage: "exclamationmark.triangle")
+                .font(.callout)
+                .foregroundStyle(Color.warmRed)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+        } else if empty {
+            placeholder {
+                if loaded {
+                    Text(model.authorFilter.map { "No open \(noun) by \($0)" } ?? "No open \(noun)")
+                } else if model.rateLimitedUntil != nil {
+                    Text("Waiting for GitHub's rate limit")
+                } else {
+                    ProgressView().controlSize(.mini)
+                    Text("Loading \(noun)…")
+                }
+            }
+        }
+    }
+
+    private func placeholder(@ViewBuilder _ content: () -> some View) -> some View {
+        HStack(spacing: 6, content: content)
+            .font(.callout)
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
     }
 }

@@ -20,6 +20,19 @@ import Testing
             to: try PullRequests.decode(json))
     }
 
+    func issues() throws -> [GhuppyCore.Issue] {
+        let json = """
+        [{"number": 3, "title": "Crashes on launch", "url": "https://github.com/octo/hello/issues/3",
+          "author": {"login": "octo"}, "updatedAt": "2026-10-29T12:00:00Z", "closedAt": null, "stateReason": null},
+         {"number": 2, "title": "Old idea", "url": "https://github.com/octo/hello/issues/2",
+          "author": null, "updatedAt": "2026-10-28T12:00:00Z", "closedAt": "2026-10-28T12:00:00Z",
+          "stateReason": "NOT_PLANNED"}]
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode([GhuppyCore.Issue].self, from: Data(json.utf8))
+    }
+
     func snapshot() throws -> WorkspaceSnapshot {
         var status = LocalStatus()
         status.branch = "main"
@@ -36,6 +49,7 @@ import Testing
                     branches: Branches(local: [Branches.Local(name: "main", upstream: "origin/main")],
                                        remote: ["origin/feature/x"]),
                     pullRequests: prs, mergedPullRequests: [], prsLoaded: true,
+                    issues: try issues(), closedIssues: [], issuesEnabled: true, issuesLoaded: true,
                     result: WorkspaceSnapshot.Result(text: "Ghuppied! Freed 2 MB", isError: false),
                     size: 4096, refCounts: RefCounts(worktrees: 1, localBranches: 3, remoteBranches: 5)),
                 WorkspaceSnapshot.Repo(path: URL(fileURLWithPath: "/work/local"), name: "local"),
@@ -56,6 +70,13 @@ import Testing
         #expect(prs.map(\.label) == [.ready, .queued])
         #expect(prs[1].mergeQueue?.position == 1)
         #expect(prs[0].checksAwaitApproval == false)
+    }
+
+    @Test func keepsTheIssues() throws {
+        let restored = try #require(Snapshots.decode(Snapshots.encode([snapshot()])).first)
+        #expect(restored.repos[0].issues.map(\.label) == [.open, .notPlanned])
+        #expect(restored.repos[0].issuesLoaded)
+        #expect(!restored.repos[1].issuesLoaded)
     }
 
     @Test func sameSnapshotsMakeSameBytes() throws {

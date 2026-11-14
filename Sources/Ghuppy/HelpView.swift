@@ -68,7 +68,8 @@ private struct ActionList: View {
         ("Settings", [
             Action(name: "Pinned Only", description: "Act on pinned repositories alone", shortcut: "⌘P"),
             Action(name: "Dry Run", description: "Report cleanup without doing it", shortcut: "⇧⌘D"),
-            Action(name: "Author", description: "Show one person's pull requests", shortcut: "⌘U"),
+            Action(name: "Issues", description: "Show issues in place of pull requests", shortcut: "⌘I"),
+            Action(name: "Author", description: "Narrow the list to one person", shortcut: "⌘U"),
         ]),
         ("On a repository", [
             Action(name: "Ghuppy!", description: "Clean up this repository alone"),

@@ -16,14 +16,20 @@ public struct WorkspaceSnapshot: Codable, Sendable, Equatable {
         /// Whether the pull requests had loaded, which tells an empty list
         /// from one that never came.
         public var prsLoaded: Bool
+        public var issues: [Issue]
+        public var closedIssues: [Issue]
+        public var issuesEnabled: Bool
+        /// Whether the issues had loaded, as `prsLoaded` for them.
+        public var issuesLoaded: Bool
         public var result: Result?
         public var size: Int64?
         public var refCounts: RefCounts?
 
         public init(path: URL, name: String, github: GitHubRepo? = nil, status: LocalStatus = LocalStatus(),
                     branches: Branches? = nil, pullRequests: [PullRequest] = [],
-                    mergedPullRequests: [PullRequest] = [], prsLoaded: Bool = false, result: Result? = nil,
-                    size: Int64? = nil, refCounts: RefCounts? = nil) {
+                    mergedPullRequests: [PullRequest] = [], prsLoaded: Bool = false, issues: [Issue] = [],
+                    closedIssues: [Issue] = [], issuesEnabled: Bool = true, issuesLoaded: Bool = false,
+                    result: Result? = nil, size: Int64? = nil, refCounts: RefCounts? = nil) {
             self.path = path
             self.name = name
             self.github = github
@@ -32,6 +38,10 @@ public struct WorkspaceSnapshot: Codable, Sendable, Equatable {
             self.pullRequests = pullRequests
             self.mergedPullRequests = mergedPullRequests
             self.prsLoaded = prsLoaded
+            self.issues = issues
+            self.closedIssues = closedIssues
+            self.issuesEnabled = issuesEnabled
+            self.issuesLoaded = issuesLoaded
             self.result = result
             self.size = size
             self.refCounts = refCounts
@@ -64,7 +74,7 @@ public struct WorkspaceSnapshot: Codable, Sendable, Equatable {
 public enum Snapshots {
     /// Goes up whenever what's saved changes shape. A file of another
     /// version is passed over rather than read, and the next save replaces it.
-    static let version = 1
+    static let version = 2
 
     private struct Header: Decodable {
         let version: Int
