@@ -99,8 +99,9 @@ Pin a repository (the pin button, or right-click) to keep it at the top of
 the list. Pins are saved, and shared by every tab that lists the repository.
 Turn on the **pin button in the toolbar** (⌘P) to have Ghuppy! (⌘G) and Refresh
 (⌘R) act on the pinned repositories alone, though every repository still loads
-the first time. Ghuppy ’em all! (⇧⌘G) and Refresh All (⇧⌘R) cover every repository
-either way. Each tab remembers its own setting, across launches too.
+the first time after each launch. Ghuppy ’em all! (⇧⌘G) and Refresh All
+(⇧⌘R) cover every repository either way. Each tab remembers its own setting,
+across launches too.
 
 The **Author** select narrows the pull requests on screen to one person's,
 out of everyone with a pull request listed; every repository stays in the list.
@@ -210,6 +211,15 @@ can't be chosen. Dry run doesn't apply to switching.
 ⌘W (or the × on hover) closes the current tab, and the window once it's the
 last one; ⇧⌘[ and ⇧⌘] switch tabs. Drag a tab along the bar to move it. Open
 tabs, in their order, and the selected one are restored on the next launch.
+
+What a tab shows comes back with it: each repository's card, with its pull
+requests, branch, size and counts and the outcome of its last cleanup or
+switch, and the working directory's size in the status bar. They show at once,
+and the refresh on launch brings them up to date; a tab not selected then shows
+them until it's selected. A repository deleted meanwhile is left out. The log
+starts empty, and so do errors, which the refresh reports again if they
+remain. It's all kept in `~/Library/Caches/me.vesnin.ghuppy/cards.json`,
+saved a few seconds after anything in it changes and on quitting.
 
 ## Repository discovery
 

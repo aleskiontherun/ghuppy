@@ -1,8 +1,8 @@
 import Foundation
 
 /// The branches a checkout can switch to, for the branch menu.
-public struct Branches: Sendable, Equatable {
-    public struct Local: Sendable, Equatable, Hashable {
+public struct Branches: Sendable, Equatable, Codable {
+    public struct Local: Sendable, Equatable, Hashable, Codable {
         public var name: String
         /// The branch it tracks, `origin/foo`, nil when it tracks none.
         public var upstream: String?
