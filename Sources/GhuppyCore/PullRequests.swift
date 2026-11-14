@@ -1,14 +1,14 @@
 import Foundation
 
-public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
-    public struct Author: Sendable, Decodable, Equatable {
+public struct PullRequest: Sendable, Identifiable, Codable, Equatable {
+    public struct Author: Sendable, Codable, Equatable {
         public let login: String
     }
 
     /// One entry of `statusCheckRollup`: a `CheckRun` (Actions and other
     /// check suites) carries status/conclusion, a `StatusContext` (the older
     /// commit-status API) carries state.
-    public struct Check: Sendable, Decodable, Equatable {
+    public struct Check: Sendable, Codable, Equatable {
         public let status: String?
         public let conclusion: String?
         public let state: String?
@@ -41,7 +41,7 @@ public struct PullRequest: Sendable, Identifiable, Decodable, Equatable {
     /// fills it in, and so when that lookup failed.
     public internal(set) var checksAwaitApproval: Bool?
 
-    public struct QueueEntry: Sendable, Decodable, Equatable {
+    public struct QueueEntry: Sendable, Codable, Equatable {
         /// 1 is the next to merge.
         public let position: Int
         /// `QUEUED`, `AWAITING_CHECKS`, `MERGEABLE`, `UNMERGEABLE` or `LOCKED`.

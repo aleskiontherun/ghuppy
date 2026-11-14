@@ -4,7 +4,7 @@ import Foundation
 /// can append to its log directly, and awaited so lines arrive in order.
 public typealias Logger = @MainActor @Sendable (String) -> Void
 
-public struct GitHubRepo: Sendable, Hashable {
+public struct GitHubRepo: Sendable, Hashable, Codable {
     public let owner: String
     public let name: String
 
@@ -52,7 +52,7 @@ public struct GitHubRepo: Sendable, Hashable {
 }
 
 /// What `git status` says about a checkout, for the repository header.
-public struct LocalStatus: Sendable, Equatable {
+public struct LocalStatus: Sendable, Equatable, Codable {
     public var branch: String?
     public var upstream: String?
     public var ahead = 0
@@ -74,7 +74,7 @@ struct Worktree: Sendable {
 }
 
 /// How many worktrees and branches a repository has, for its header.
-public struct RefCounts: Sendable, Equatable {
+public struct RefCounts: Sendable, Equatable, Codable {
     /// The linked worktrees still on disk, the checkout itself not counted.
     public var worktrees = 0
     public var localBranches = 0

@@ -44,6 +44,10 @@ final class RepoState: Identifiable {
     /// Later reloads stay out of sight. Even a refresh of only the pinned
     /// repositories loads the ones still without it.
     var prsLoaded = false
+    /// Whether what the card shows came from the last run and has yet to be
+    /// loaded again in this one. Even a refresh of only the pinned
+    /// repositories loads these, as it does the ones never loaded.
+    var restored = false
     /// What the repository is doing right now, shown next to its name.
     var activity: String?
     /// The outcome of the last cleanup or branch switch.
@@ -62,6 +66,30 @@ final class RepoState: Identifiable {
     init(path: URL, name: String) {
         git = GitRepo(path: path)
         self.name = name
+    }
+
+    /// The card as the last run left it, to show until it's loaded again.
+    init(restoring saved: WorkspaceSnapshot.Repo) {
+        git = GitRepo(path: saved.path)
+        name = saved.name
+        github = saved.github
+        status = saved.status
+        branches = saved.branches
+        pullRequests = saved.pullRequests
+        mergedPullRequests = saved.mergedPullRequests
+        prsLoaded = saved.prsLoaded
+        result = saved.result.map { ($0.text, $0.isError) }
+        size = saved.size
+        refCounts = saved.refCounts
+        restored = true
+    }
+
+    var snapshot: WorkspaceSnapshot.Repo {
+        WorkspaceSnapshot.Repo(
+            path: git.path, name: name, github: github, status: status, branches: branches,
+            pullRequests: pullRequests, mergedPullRequests: mergedPullRequests, prsLoaded: prsLoaded,
+            result: result.map { WorkspaceSnapshot.Result(text: $0.text, isError: $0.isError) },
+            size: size, refCounts: refCounts)
     }
 }
 
@@ -185,6 +213,26 @@ final class Workspace: Identifiable {
         self.authorFilter = authorFilter
     }
 
+    /// What the tab shows, to save for the next launch: nil without a root.
+    var snapshot: WorkspaceSnapshot? {
+        root.map { WorkspaceSnapshot(root: $0, repos: repos.map(\.snapshot), directorySize: directorySize) }
+    }
+
+    /// Shows what the last run saved for this tab's root, until a refresh
+    /// loads it again. A repository no longer on disk is left out. Their
+    /// actions are read at once, as reading a file costs next to nothing.
+    func restore(_ saved: WorkspaceSnapshot) {
+        guard let root, saved.root == root, repos.isEmpty else { return }
+        let fileManager = FileManager.default
+        repos = saved.repos
+            .filter { fileManager.fileExists(atPath: $0.path.appendingPathComponent(".git").path) }
+            .map(RepoState.init(restoring:))
+        directorySize = saved.directorySize
+        for repo in repos {
+            Task { await loadActions(repo) }
+        }
+    }
+
     func chooseRoot() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -208,8 +256,8 @@ final class Workspace: Identifiable {
     /// Brings the tab up to date without fetching, in place of any refresh
     /// still running: rediscovers the repositories, reloads the status and
     /// pull requests of the ones in scope, and measures the disk again. With
-    /// Pinned only, a repository out of scope still loads the first time, so
-    /// its card isn't left waiting.
+    /// Pinned only, a repository out of scope still loads the first time in
+    /// each run, so its card isn't left waiting, or showing the last run's.
     func refresh(includingUnpinned: Bool = false) {
         guard root != nil else { return }
         stopped = false
@@ -224,7 +272,7 @@ final class Workspace: Identifiable {
             measureDisk()
             let pins = Pins.shared
             let repos = orderedRepos.filter {
-                includingUnpinned || !pinnedOnly || !$0.prsLoaded || pins.isPinned($0.git.path)
+                includingUnpinned || !pinnedOnly || !$0.prsLoaded || $0.restored || pins.isPinned($0.git.path)
             }
             await forEach(repos) { await self.reload($0) }
             let measuring = measurement
@@ -256,7 +304,8 @@ final class Workspace: Identifiable {
             try? await Task.sleep(for: Self.changeCheckInterval)
             guard !Task.isCancelled, !refreshSlot.isRunning, bulkActivity == nil, !scanning,
                   changeCheck == nil else { continue }
-            let repos = scopedRepos.filter { $0.prsLoaded && $0.github != nil }
+            // A restored card is left to the refresh, which reads its remote again too.
+            let repos = scopedRepos.filter { $0.prsLoaded && !$0.restored && $0.github != nil }
             let check = Task {
                 await forEach(repos) { await self.reloadIfChanged($0) }
             }
@@ -442,7 +491,9 @@ final class Workspace: Identifiable {
         scanning = true
         defer { scanning = false }
 
-        let scan = await Discovery.scan(under: root, knownMain: Set(repos.map(\.git.path)))
+        // A restored repository is asked again: it was a main checkout in the
+        // last run, but much can change before the next.
+        let scan = await Discovery.scan(under: root, knownMain: Set(repos.filter { !$0.restored }.map(\.git.path)))
         let paths = scan.repositories
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         guard !Task.isCancelled, root == self.root else { return false }
@@ -473,8 +524,10 @@ final class Workspace: Identifiable {
 
     func refreshLocal(_ repo: RepoState) async {
         await loadActions(repo)
-        if repo.github == nil {
-            repo.github = await repo.git.gitHubRepo()
+        // The remote is read once a run: the last run's may have changed since.
+        if repo.github == nil || repo.restored {
+            let github = await repo.git.gitHubRepo()
+            if !Task.isCancelled { repo.github = github }
         }
         let status = await repo.git.status()
         let branches = await repo.git.branches()
@@ -541,6 +594,7 @@ final class Workspace: Identifiable {
             repo.mergedPullRequests = []
             repo.prError = nil
             repo.prsLoaded = true
+            repo.restored = false
             return
         }
         let quiet = look != nil
@@ -566,6 +620,7 @@ final class Workspace: Identifiable {
             }
             repo.pullRequests = prs
             repo.prsLoaded = true
+            repo.restored = false
             repo.prError = nil
         } catch is RateLimitError {
             // The status bar says so, once for every repository, and what's
