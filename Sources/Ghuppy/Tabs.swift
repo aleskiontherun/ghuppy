@@ -5,7 +5,8 @@ import SwiftUI
 
 /// The open tabs, saved to user defaults whenever a tab is opened, closed,
 /// moved, selected, pointed at a different folder, has Pinned only switched
-/// on or off, or has another author chosen.
+/// on or off, or has another author chosen. What their cards show is saved
+/// too, to a file, for the next launch to show at once.
 @MainActor @Observable
 final class Tabs {
     private static let tabsKey = "tabs"
@@ -16,6 +17,16 @@ final class Tabs {
     private static let authorFilterKey = "authorFilterTabs"
     /// Where the single working directory was kept before there were tabs.
     private static let legacyRootKey = "workingDirectory"
+    /// Where what the cards show is saved: a cache, as a refresh brings it
+    /// all back. The app and a bare `swift run` binary keep one each, as
+    /// they do their user defaults.
+    private static let snapshotsURL = URL.cachesDirectory
+        .appending(path: Bundle.main.bundleIdentifier ?? ProcessInfo.processInfo.processName,
+                   directoryHint: .isDirectory)
+        .appending(path: "cards.json")
+    /// How long after the cards change they are saved. Changes meanwhile go
+    /// along with them.
+    private static let snapshotsDelay: Duration = .seconds(3)
 
     private(set) var workspaces: [Workspace] = []
     /// Goes up each time the author select is asked to open.
@@ -27,6 +38,12 @@ final class Tabs {
     var selected: Workspace {
         workspaces.first { $0.id == selectedID } ?? workspaces[0]
     }
+
+    /// The last snapshots written, which tells a save that would change nothing.
+    @ObservationIgnored private var savedSnapshots: Data?
+    @ObservationIgnored private var snapshotSave: Task<Void, Never>?
+    /// Why the cards last failed to save, so a failure that lasts is logged once.
+    @ObservationIgnored private var snapshotError: String?
 
     init() {
         let defaults = UserDefaults.standard
@@ -50,6 +67,13 @@ final class Tabs {
         selectedID = workspaces[index].id
         self.workspaces = workspaces
         workspaces.forEach(observe)
+        restoreSnapshots()
+        saveSnapshots()
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.saveSnapshots() }
+        }
     }
 
     func newTab() {
@@ -94,6 +118,62 @@ final class Tabs {
         defaults.set(workspaces.map(\.pinnedOnly), forKey: Self.pinnedOnlyKey)
         defaults.set(workspaces.map { $0.authorFilter ?? "" }, forKey: Self.authorFilterKey)
         defaults.set(workspaces.firstIndex { $0.id == selectedID } ?? 0, forKey: Self.selectedKey)
+    }
+
+    // MARK: Saved cards
+
+    /// Shows each tab what the last run saved for its root. A file that
+    /// can't be read is named in the selected tab's log, and the next save
+    /// replaces it.
+    private func restoreSnapshots() {
+        do {
+            let saved = try Snapshots.load(from: Self.snapshotsURL)
+            for workspace in workspaces {
+                if let snapshot = saved.first(where: { $0.root == workspace.root }) {
+                    workspace.restore(snapshot)
+                }
+            }
+        } catch {
+            selected.append(nil, "Couldn't read the saved repositories: \(error.localizedDescription)", isError: true)
+        }
+    }
+
+    /// Writes what every tab shows, unless that's what was written last, and
+    /// saves it again a few seconds after any of it next changes. The tabs
+    /// closed or pointed elsewhere since are left out. A failure is named
+    /// in the selected tab's log once, until a save gets through.
+    private func saveSnapshots() {
+        snapshotSave?.cancel()
+        snapshotSave = nil
+        let data: Data
+        do {
+            // Every property read for the snapshots is watched, until one of
+            // them next changes.
+            data = try withObservationTracking {
+                Result { try Snapshots.encode(workspaces.compactMap(\.snapshot)) }
+            } onChange: { [weak self] in
+                Task { @MainActor in self?.scheduleSnapshotSave() }
+            }.get()
+            guard data != savedSnapshots else { return }
+            try Snapshots.save(data, to: Self.snapshotsURL)
+        } catch {
+            if snapshotError != error.localizedDescription {
+                selected.append(nil, "Couldn't save the repositories: \(error.localizedDescription)", isError: true)
+            }
+            snapshotError = error.localizedDescription
+            return
+        }
+        savedSnapshots = data
+        snapshotError = nil
+    }
+
+    private func scheduleSnapshotSave() {
+        guard snapshotSave == nil else { return }
+        snapshotSave = Task {
+            try? await Task.sleep(for: Self.snapshotsDelay)
+            guard !Task.isCancelled else { return }
+            saveSnapshots()
+        }
     }
 }
 
