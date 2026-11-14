@@ -104,8 +104,9 @@ either way. Each tab remembers its own setting, across launches too.
 
 The **Author** select narrows the pull requests on screen to one person's,
 out of everyone with a pull request listed; every repository stays in the list.
-It only changes what is shown: Ghuppy ’em all! acts as before. Each tab remembers
-its own choice, across launches too, until its working directory changes.
+It only changes what is shown: Ghuppy ’em all! acts as before, and the select
+stays usable while one runs. Each tab remembers its own choice, across launches
+too, until its working directory changes.
 
 ## Repository actions
 

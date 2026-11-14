@@ -55,7 +55,6 @@ struct WorkspaceToolbar: ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             AuthorMenu(workspace: workspace, requests: authorMenuRequests)
                 .modifier(HoverHighlight(pressed: false))
-                .disabled(!workspace.canAct)
                 .tooltip("Author", shortcut: "⌘U")
         }
         ToolbarItem(placement: .primaryAction) {
@@ -128,6 +127,8 @@ private struct ToolbarToggle: View {
 
 /// Picks whose pull requests to show. A menu rather than a plain Picker,
 /// which in a toolbar can lose sight of its selection and show nothing.
+/// Never disabled: it only changes what is shown, so it is no less safe
+/// mid-cleanup than scrolling.
 private struct AuthorMenu: View {
     @Bindable var workspace: Workspace
     /// Goes up each time the menu is asked to open from the keyboard.
@@ -144,10 +145,7 @@ private struct AuthorMenu: View {
                 .contentShape(Rectangle())
                 .onTapGesture { AuthorPopUp(workspace: workspace).show(from: anchor) }
         }
-        .onChange(of: requests) {
-            guard workspace.canAct else { return }
-            AuthorPopUp(workspace: workspace).show(from: anchor)
-        }
+        .onChange(of: requests) { AuthorPopUp(workspace: workspace).show(from: anchor) }
     }
 
     private var menu: some View {
