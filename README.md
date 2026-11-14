@@ -227,7 +227,7 @@ next to nothing however busy they are.
 
 ## Requirements
 
-- macOS 14 or later
+- macOS 14 or later on an Apple silicon Mac
 - `git` and the [GitHub CLI](https://cli.github.com) (`gh auth login`), in
   `/opt/homebrew/bin`, `/usr/local/bin` or `/usr/bin`
 

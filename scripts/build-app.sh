@@ -10,8 +10,8 @@ bundle_id=me.vesnin.ghuppy
 app="build/$name.app"
 version=$(git describe --tags --always 2>/dev/null || echo 0.1.0)
 
-swift build -c release --arch arm64 --arch x86_64
-bin=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
+swift build -c release --arch arm64
+bin=$(swift build -c release --arch arm64 --show-bin-path)
 
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
