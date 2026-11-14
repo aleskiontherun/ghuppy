@@ -44,10 +44,11 @@ import Testing
         #expect(response.etag == nil)
     }
 
-    @Test func watchesTheLatestUpdateAndTheLatestRuns() {
+    @Test func watchesTheLatestUpdatesAndTheLatestRuns() {
         #expect(PullRequestChanges.urls(for: GitHubRepo(owner: "octo", name: "hello")) == [
             "repos/octo/hello/pulls?state=all&sort=updated&direction=desc&per_page=1",
             "repos/octo/hello/actions/runs?per_page=20",
+            "repos/octo/hello/issues?state=all&sort=updated&direction=desc&per_page=1",
         ])
     }
 }

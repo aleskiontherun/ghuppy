@@ -6,7 +6,9 @@ A small macOS app for keeping a folder full of git checkouts tidy. Pick a
 working directory, and Ghuppy lists every repository under it, with a link
 to each one on GitHub and its pull requests underneath: the ones ready to
 merge, then the other open ones, then the ones in the merge queue, the next to
-merge last, then the last 3 merged, the last merged first.
+merge last, then the last 3 merged, the last merged first. Or, switched to
+issues, its open issues, the newest first, then the last 3 closed, the last
+closed first.
 
 - **Ghuppy!** — `git fetch --prune`, then delete local branches whose work has
   actually landed and the worktrees left behind with them, then a
@@ -25,7 +27,8 @@ merge last, then the last 3 merged, the last merged first.
   of its own. See [Repository actions](#repository-actions).
 
 ⌘/ lists every action and shortcut, how labels are decided, and how to set up
-repository actions. ⌘U opens the author select. ⌘L shows or hides the log,
+repository actions. ⌘I switches between pull requests and issues. ⌘U opens
+the author select. ⌘L shows or hides the log,
 and ⌘K clears the log tab on screen. ⌃C stops everything running in
 every tab. A cleanup stopped this way deletes nothing more, and what it had
 already deleted stays deleted.
@@ -56,8 +59,9 @@ another tab or another app, once a minute has passed since its last refresh.
 
 Between refreshes, the tab on screen asks GitHub every 30 seconds whether
 anything changed, and reloads only the repositories whose pull requests did:
-one was opened, pushed to, reviewed, edited, closed or merged, or a GitHub
-Actions run started or finished. Asking costs nothing against the rate limit
+one was opened, pushed to, reviewed, edited, closed or merged, a GitHub
+Actions run started or finished, or an issue was opened, edited, commented on
+or closed. Asking costs nothing against the rate limit
 while nothing has changed. GitHub's answers can be up to a minute old, and
 checks reported by anything other than GitHub Actions show at the next
 refresh. It covers the same repositories as Refresh, and waits while
@@ -67,8 +71,8 @@ after it.
 When GitHub's rate limit stops a request, Ghuppy stops sending any until the
 limit lifts: until the quota resets if it ran out, and otherwise for a minute,
 twice as long each time it happens again in a row, up to half an hour. The
-status bar shows the time requests resume, and the pull requests on screen
-stay as they were. Ghuppy! carries on meanwhile, and keeps any branch whose
+status bar shows the time requests resume, and the pull requests and issues
+on screen stay as they were. Ghuppy! carries on meanwhile, and keeps any branch whose
 pull request it can't check.
 
 A pull request shows one label, the first of these that applies: **Merged**,
@@ -103,11 +107,22 @@ the first time after each launch. Ghuppy ’em all! (⇧⌘G) and Refresh All
 (⇧⌘R) cover every repository either way. Each tab remembers its own setting,
 across launches too.
 
-The **Author** select narrows the pull requests on screen to one person's,
-out of everyone with a pull request listed; every repository stays in the list.
-It only changes what is shown: Ghuppy ’em all! acts as before, and the select
-stays usable while one runs. Each tab remembers its own choice, across launches
-too, until its working directory changes.
+The **switch beside the author select** (⌘I) shows each repository's issues
+in place of its pull requests: up to 100 open ones, the newest first, then the
+last 3 closed, labelled **Open**, **Closed**, **Not planned** or **Duplicate**.
+A repository with issues turned off says so. Both load on every refresh,
+in the same request as the pull requests' merge queue, so switching shows
+them at once and takes no request of its own, and the check for changes every
+30 seconds covers issues too. Like the author select, it only changes what is shown, and stays
+usable while a cleanup runs. Each tab remembers its own setting, across
+launches too.
+
+The **Author** select narrows the pull requests or issues on screen to one
+person's, out of everyone with one listed; every repository stays in the list.
+The last 3 merged or closed are the repository's, so fewer than 3 of them may
+be that person's. It only changes what is shown: Ghuppy ’em all! acts as
+before, and the select stays usable while one runs. Each tab remembers its own
+choice, across launches too, until its working directory changes.
 
 ## Repository actions
 
@@ -213,7 +228,7 @@ last one; ⇧⌘[ and ⇧⌘] switch tabs. Drag a tab along the bar to move it. 
 tabs, in their order, and the selected one are restored on the next launch.
 
 What a tab shows comes back with it: each repository's card, with its pull
-requests, branch, size and counts and the outcome of its last cleanup or
+requests and issues, branch, size and counts and the outcome of its last cleanup or
 switch, and the working directory's size in the status bar. They show at once,
 and the refresh on launch brings them up to date; a tab not selected then shows
 them until it's selected. A repository deleted meanwhile is left out. The log

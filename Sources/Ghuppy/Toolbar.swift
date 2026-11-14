@@ -53,6 +53,9 @@ struct WorkspaceToolbar: ToolbarContent {
         // Holds the items to the right, where the title would otherwise.
         ToolbarItem(placement: .primaryAction) { Spacer() }
         ToolbarItem(placement: .primaryAction) {
+            ListingSwitch(showsIssues: $workspace.showsIssues)
+        }
+        ToolbarItem(placement: .primaryAction) {
             AuthorMenu(workspace: workspace, requests: authorMenuRequests)
                 .modifier(HoverHighlight(pressed: false))
                 .tooltip("Author", shortcut: "⌘U")
@@ -125,7 +128,51 @@ private struct ToolbarToggle: View {
     }
 }
 
-/// Picks whose pull requests to show. A menu rather than a plain Picker,
+/// Switches the cards between pull requests and issues: the tab bar's look
+/// in small, the one shown raised. Never disabled, as the author select
+/// isn't: it only changes what is shown.
+private struct ListingSwitch: View {
+    @Binding var showsIssues: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 2) {
+                segment("arrow.triangle.pull", name: "Pull Requests", shown: !showsIssues) { showsIssues = false }
+                segment("smallcircle.filled.circle", name: "Issues", shown: showsIssues) { showsIssues = true }
+            }
+            .padding(2)
+            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
+            Text("⌘I")
+                .font(.title3)
+                .foregroundStyle(Color.muted)
+        }
+        .padding(.horizontal, 6)
+    }
+
+    private func segment(_ symbol: String, name: String, shown: Bool,
+                         action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .imageScale(.large)
+                .foregroundStyle(shown ? Color.primary : Color.muted)
+                .frame(width: 30, height: 22)
+                .background {
+                    if shown {
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color(nsColor: .controlColor))
+                            .shadow(color: .black.opacity(0.12), radius: 1.5, y: 0.5)
+                    }
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(name)
+        .accessibilityAddTraits(shown ? .isSelected : [])
+        .tooltip(name, shortcut: "⌘I")
+    }
+}
+
+/// Picks whose pull requests or issues to show. A menu rather than a plain Picker,
 /// which in a toolbar can lose sight of its selection and show nothing.
 /// Never disabled: it only changes what is shown, so it is no less safe
 /// mid-cleanup than scrolling.
