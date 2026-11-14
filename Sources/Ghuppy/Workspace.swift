@@ -98,7 +98,7 @@ final class Workspace: Identifiable {
     private var scopedRepos: [RepoState] {
         pinnedOnly ? orderedRepos.filter { Pins.shared.isPinned($0.git.path) } : orderedRepos
     }
-    /// Whether Refresh, the settings and the author select can be used.
+    /// Whether Refresh and the settings can be used.
     var canAct: Bool { root != nil && bulkActivity == nil }
     var log: [LogLine] = []
     /// The log tabs of the repository actions run on this tab, in the order

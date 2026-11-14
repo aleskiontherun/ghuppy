@@ -83,7 +83,6 @@ struct GhuppyApp: App {
                 .disabled(!tabs.selected.canAct)
                 Button("Choose Author…") { tabs.authorMenuRequests += 1 }
                     .keyboardShortcut("u")
-                    .disabled(!tabs.selected.canAct)
                 Divider()
                 Group {
                     Button("Refresh") { tabs.selected.refresh() }

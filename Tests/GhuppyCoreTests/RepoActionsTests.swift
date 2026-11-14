@@ -134,26 +134,30 @@ struct ActionProcessTests {
     @Test func cancellingTerminatesEverythingItStarted() async throws {
         let marker = cwd.appendingPathComponent("ghuppy-action-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: marker) }
-        // The child outlives a shell that only passes its SIGTERM on to it
-        // when it's in the same process group. It touches the marker 4
-        // seconds after "started", before the SIGKILL that follows the
-        // cancel by 5, so only the SIGTERM reaching it keeps the marker away.
+        // A child of the shell touches the marker when a SIGTERM reaches it,
+        // which happens only when it's in the shell's process group: the
+        // SIGKILL that follows the cancel by 5 seconds can't be trapped. It
+        // says "started" once its trap is set, so the cancel can't beat it.
         let (ready, signal) = AsyncStream<Void>.makeStream()
         let task = Task {
             for await event in ActionProcess.run(
-                "echo started; (sleep 4; touch '\(marker.path)') & wait", in: cwd, shell: "/bin/sh"
+                "(trap \"touch '\(marker.path)'; exit\" TERM; echo started; sleep 60 & wait) & wait",
+                in: cwd, shell: "/bin/sh"
             ) {
                 if case .output = event { signal.yield() }
             }
         }
-        // Cancelled once the child is running, not after a fixed wait, and
-        // nothing is timed: a busy CI runner can stall every test for
-        // seconds. A stream that ignored the cancel would leave the marker.
+        // Nothing here races a clock: a busy CI runner can stall every test
+        // for seconds between the output and the cancel. The wait for the
+        // marker is only a ceiling for a stream that ignored the cancel.
         for await _ in ready { break }
         task.cancel()
         _ = await task.value
-        try await Task.sleep(for: .seconds(5))
-        #expect(!FileManager.default.fileExists(atPath: marker.path))
+        let deadline = ContinuousClock.now + .seconds(30)
+        while !FileManager.default.fileExists(atPath: marker.path), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        #expect(FileManager.default.fileExists(atPath: marker.path))
     }
 
     @Test func cleansLinesAsATerminalWouldShowThem() {
