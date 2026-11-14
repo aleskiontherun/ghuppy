@@ -1,0 +1,4 @@
+actions:
+  - name: Install
+    icon: arrow.down.app
+    run: ./scripts/build-app.sh --restart
