@@ -170,13 +170,15 @@ import Testing
     func label(
         _ rollup: String = "[]", review: String = "null", mergeState: String = "BLOCKED",
         mergeable: String = "MERGEABLE", draft: Bool = false, queued: Bool = false,
-        mergedAt: String = "null", awaitingApproval: Bool = false, lookedUp: Bool = true
+        mergedAt: String = "null", closedAt: String = "null", awaitingApproval: Bool = false,
+        lookedUp: Bool = true
     ) throws -> PullRequest.Label {
         let json = """
         [{"number": 7, "title": "t", "url": "https://github.com/octo/hello/pull/7",
           "isDraft": \(draft), "author": null, "headRefName": "b",
           "reviewDecision": \(review), "mergeable": "\(mergeable)", "mergeStateStatus": "\(mergeState)",
-          "updatedAt": "2026-10-29T12:00:00Z", "mergedAt": \(mergedAt), "statusCheckRollup": \(rollup)}]
+          "updatedAt": "2026-10-29T12:00:00Z", "mergedAt": \(mergedAt),
+          "closedAt": \(closedAt), "statusCheckRollup": \(rollup)}]
         """
         let prs = try PullRequests.decode(json)
         return try #require((lookedUp ? PullRequests.applying(
@@ -217,7 +219,10 @@ import Testing
             draft: true, queued: true, awaitingApproval: true) == .queued)
         #expect(try label(
             failing, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
-            draft: true, queued: true, mergedAt: merged, awaitingApproval: true) == .merged)
+            draft: true, queued: true, closedAt: merged, awaitingApproval: true) == .closed)
+        #expect(try label(
+            failing, review: changesRequested, mergeState: "BEHIND", mergeable: "CONFLICTING",
+            draft: true, queued: true, mergedAt: merged, closedAt: merged, awaitingApproval: true) == .merged)
     }
 
     @Test func readyOutranksApproved() throws {
@@ -255,11 +260,13 @@ import Testing
 }
 
 @Suite struct ExtrasDecoding {
-    func merged(_ number: Int, at mergedAt: String, updated: String = "2026-11-01T00:00:00Z") -> String {
+    func merged(_ number: Int, at mergedAt: String?, closed closedAt: String? = nil,
+                updated: String = "2026-11-01T00:00:00Z") -> String {
         """
         {"number": \(number), "title": "PR \(number)", "url": "https://github.com/octo/hello/pull/\(number)",
          "isDraft": false, "author": {"login": "octo"}, "headRefName": "branch-\(number)",
-         "updatedAt": "\(updated)", "mergedAt": "\(mergedAt)"}
+         "updatedAt": "\(updated)", "mergedAt": \(mergedAt.map { "\"\($0)\"" } ?? "null"),
+         "closedAt": \((closedAt ?? mergedAt).map { "\"\($0)\"" } ?? "null")}
         """
     }
 
@@ -279,14 +286,26 @@ import Testing
         """
     }
 
-    func extras(open: String = "", merged: [String] = [], issuesEnabled: Bool = true,
-                openIssues: [String] = [], closedIssues: [String] = []) throws -> PullRequests.Extras {
-        try PullRequests.decodeExtras("""
-        {"open": {"nodes": [\(open)]}, "merged": {"nodes": [\(merged.joined(separator: ","))]},
+    /// The whole response, as `gh api graphql` prints it. `lookups` are the
+    /// pinned ones, by alias.
+    func response(open: String = "", merged: [String] = [], issuesEnabled: Bool = true,
+                  openIssues: [String] = [], closedIssues: [String] = [], lookups: [String: String] = [:],
+                  errors: String? = nil) -> String {
+        let pinned = lookups.map { #""\#($0.key)": \#($0.value)"# }.map { ", " + $0 }.joined()
+        return """
+        {"data": {"repository": {"open": {"nodes": [\(open)]}, "merged": {"nodes": [\(merged.joined(separator: ","))]},
          "hasIssuesEnabled": \(issuesEnabled),
          "openIssues": {"nodes": [\(openIssues.joined(separator: ","))]},
-         "closedIssues": {"nodes": [\(closedIssues.joined(separator: ","))]}}
-        """)
+         "closedIssues": {"nodes": [\(closedIssues.joined(separator: ","))]}\(pinned)}}\(errors.map { #", "errors": \#($0)"# } ?? "")}
+        """
+    }
+
+    func extras(open: String = "", merged: [String] = [], issuesEnabled: Bool = true,
+                openIssues: [String] = [], closedIssues: [String] = [], lookups: [String: String] = [:],
+                pinned: PullRequests.Pinned = PullRequests.Pinned()) throws -> PullRequests.Extras {
+        try PullRequests.decodeExtras(response(
+            open: open, merged: merged, issuesEnabled: issuesEnabled, openIssues: openIssues,
+            closedIssues: closedIssues, lookups: lookups), pinned: pinned)
     }
 
     @Test func queueEntriesByNumber() throws {
@@ -361,6 +380,91 @@ import Testing
     @Test func issuesTurnedOff() throws {
         #expect(try extras(issuesEnabled: false).issuesEnabled == false)
         #expect(try extras().issuesEnabled)
+    }
+
+    /// The last 3 merged are 3 not pinned, and the pinned ones come along
+    /// however long ago they merged, closed without merging too, in order.
+    @Test func pinnedMergedStayAlongWithTheLastThreeOthers() throws {
+        let merged = try extras(
+            merged: [
+                self.merged(2, at: "2026-10-30T00:00:00Z"),
+                self.merged(3, at: "2026-10-31T00:00:00Z"),
+                self.merged(4, at: "2026-10-29T00:00:00Z"),
+                self.merged(5, at: "2026-10-28T00:00:00Z"),
+                self.merged(6, at: "2026-10-27T00:00:00Z"),
+            ],
+            lookups: [
+                "pinnedPR3": self.merged(3, at: "2026-10-31T00:00:00Z"),
+                "pinnedPR1": self.merged(1, at: "2026-01-01T00:00:00Z"),
+                "pinnedPR9": self.merged(9, at: nil, closed: "2026-10-29T12:00:00Z"),
+            ],
+            pinned: PullRequests.Pinned(pullRequests: [1, 3, 9])
+        ).merged
+        #expect(merged.map(\.number) == [3, 2, 9, 4, 5, 1])
+        #expect(merged.map(\.label) == [.merged, .merged, .closed, .merged, .merged, .merged])
+    }
+
+    /// A pinned one still open is in the open list, and a pinned one that's
+    /// gone is left out.
+    @Test func pinnedOpenOrGoneAreNotAmongTheMerged() throws {
+        let extras = try extras(
+            merged: [merged(2, at: "2026-10-30T00:00:00Z")],
+            lookups: [
+                "pinnedPR7": #"{"number": 7, "title": "PR 7", "url": "https://github.com/octo/hello/pull/7", "isDraft": false, "author": null, "headRefName": "b", "updatedAt": "2026-11-01T00:00:00Z", "mergedAt": null, "closedAt": null}"#,
+                "pinnedPR8": "null",
+                "pinnedIssue4": issue(4),
+                "pinnedIssue5": "null",
+            ],
+            pinned: PullRequests.Pinned(pullRequests: [7, 8], issues: [4, 5]))
+        #expect(extras.merged.map(\.number) == [2])
+        #expect(extras.closedIssues.isEmpty)
+    }
+
+    @Test func pinnedClosedIssuesStayAlongWithTheLastThreeOthers() throws {
+        let closed = try extras(
+            closedIssues: [
+                issue(2, closed: "2026-10-30T00:00:00Z"),
+                issue(3, closed: "2026-10-31T00:00:00Z"),
+                issue(4, closed: "2026-10-29T00:00:00Z"),
+                issue(5, closed: "2026-10-28T00:00:00Z"),
+            ],
+            lookups: ["pinnedIssue1": issue(1, closed: "2026-01-01T00:00:00Z", reason: "NOT_PLANNED"),
+                      "pinnedIssue3": issue(3, closed: "2026-10-31T00:00:00Z")],
+            pinned: PullRequests.Pinned(issues: [1, 3])
+        ).closedIssues
+        #expect(closed.map(\.number) == [3, 2, 4, 5, 1])
+        #expect(closed.last?.label == .notPlanned)
+    }
+
+    /// `gh` fails when any lookup does, printing the whole response.
+    func failed(_ stdout: String) -> ShellResult {
+        ShellResult(status: 1, stdout: stdout, stderr: "gh: Could not resolve to an Issue with the number of 5.")
+    }
+
+    func notFound(_ alias: String) -> String {
+        #"{"type": "NOT_FOUND", "path": ["repository", "\#(alias)"], "message": "Could not resolve"}"#
+    }
+
+    @Test func aPinnedLookupNotFoundStillAnswers() throws {
+        let stdout = response(lookups: ["pinnedIssue5": "null", "pinnedPR8": "null"],
+                              errors: "[\(notFound("pinnedIssue5")), \(notFound("pinnedPR8"))]")
+        #expect(PullRequests.answered(failed(stdout)))
+        #expect(try PullRequests.decodeExtras(stdout, pinned: PullRequests.Pinned(pullRequests: [8], issues: [5]))
+            .issuesEnabled)
+    }
+
+    @Test(arguments: [
+        // Something else not found.
+        #"{"data": {"repository": null}, "errors": [{"type": "NOT_FOUND", "path": ["repository"]}]}"#,
+        // A pinned lookup failing for another reason.
+        #"{"data": {"repository": {"pinnedPR8": null}}, "errors": [{"type": "FORBIDDEN", "path": ["repository", "pinnedPR8"]}]}"#,
+        // A rate limit.
+        #"{"data": null, "errors": [{"type": "RATE_LIMITED", "message": "API rate limit exceeded"}]}"#,
+        // No response at all.
+        "",
+    ])
+    func otherFailuresDoNotAnswer(_ stdout: String) {
+        #expect(!PullRequests.answered(failed(stdout)))
     }
 }
 

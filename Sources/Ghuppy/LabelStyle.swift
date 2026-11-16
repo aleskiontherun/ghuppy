@@ -6,6 +6,7 @@ extension PullRequest.Label {
     var title: String {
         switch self {
         case .merged: "Merged"
+        case .closed: "Closed"
         case .queued: "Queued #1"
         case .draft: "Draft"
         case .changesRequested: "Changes"
@@ -26,7 +27,7 @@ extension PullRequest.Label {
         switch self {
         case .merged: .softPurple
         case .queued, .checksRunning: .darkYellow
-        case .draft, .unknown: .gray
+        case .closed, .draft, .unknown: .gray
         case .changesRequested, .conflicts, .checksFailed, .blocked: .warmRed
         case .update, .checksAwaitApproval, .reviewRequired: .logoOrange
         case .ready, .approved: .softGreen
@@ -37,6 +38,7 @@ extension PullRequest.Label {
     var condition: String {
         switch self {
         case .merged: "Merged"
+        case .closed: "Closed without merging"
         case .queued: "In the merge queue"
         case .draft: "A draft"
         case .changesRequested: "Changes requested"
@@ -64,7 +66,7 @@ extension PullRequest.Label {
     /// The heading Help groups the label under.
     var group: String {
         switch self {
-        case .merged, .queued, .draft: "Past asking for anything"
+        case .merged, .closed, .queued, .draft: "Past asking for anything"
         case .changesRequested, .conflicts, .checksFailed, .update: "Takes a new commit"
         case .checksAwaitApproval, .reviewRequired: "Waits on someone"
         case .checksRunning, .blocked: "Waits on GitHub"

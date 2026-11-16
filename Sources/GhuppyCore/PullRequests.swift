@@ -29,6 +29,10 @@ public struct PullRequest: Sendable, Identifiable, Codable, Equatable, Authored 
     public let updatedAt: Date
     /// When the PR was merged, nil while it's open.
     public let mergedAt: Date?
+    /// When the PR was closed, merged or not, nil while it's open. Only a
+    /// pinned PR is looked up with it: the others closed without merging
+    /// aren't listed.
+    public let closedAt: Date?
     public let statusCheckRollup: [Check]?
     /// The PR's place in its base branch's merge queue, nil when it isn't
     /// in one. `gh pr list` has no field for it, so
@@ -127,7 +131,7 @@ public struct PullRequest: Sendable, Identifiable, Codable, Equatable, Authored 
     public var isBlocked: Bool { mergeStateStatus == "BLOCKED" }
 
     /// The labels in the order `label` tries them, the first that applies
-    /// winning: the most important first. A merged or queued PR is past
+    /// winning: the most important first. A merged, closed or queued PR is past
     /// everything below it, and a draft isn't asking for anything yet. Then
     /// what's holding the merge back: first what takes a new commit, the most
     /// work first, as that restarts the checks; then what waits on someone;
@@ -136,7 +140,7 @@ public struct PullRequest: Sendable, Identifiable, Codable, Equatable, Authored 
     /// as anything above it is what's left to do. A PR that gets to the end is
     /// one whose state isn't known yet.
     public enum Label: Sendable, CaseIterable {
-        case merged, queued, draft, changesRequested, conflicts, checksFailed, update
+        case merged, closed, queued, draft, changesRequested, conflicts, checksFailed, update
         case checksAwaitApproval, reviewRequired, checksRunning, blocked, ready, approved, unknown
     }
 
@@ -148,6 +152,7 @@ public struct PullRequest: Sendable, Identifiable, Codable, Equatable, Authored 
     private func applies(_ label: Label) -> Bool {
         switch label {
         case .merged: mergedAt != nil
+        case .closed: closedAt != nil
         case .queued: mergeQueue != nil
         case .draft: isDraft
         case .changesRequested: review == .changesRequested
@@ -195,9 +200,13 @@ public enum PullRequests {
     /// GitHub's rate limit stops the call, and without running it while
     /// requests are paused for that. Throws `CancellationError` when the
     /// calling task is cancelled, which terminates a `gh` already running.
-    static func gh(_ args: [String], cwd: URL, retryDelays: [Int] = [1, 3]) async throws -> ShellResult {
+    /// `answered` tells a result to hand back from a failure to retry.
+    static func gh(
+        _ args: [String], cwd: URL, retryDelays: [Int] = [1, 3],
+        answered: @Sendable (ShellResult) -> Bool = { $0.ok }
+    ) async throws -> ShellResult {
         await ghGate.acquire()
-        let outcome = await attempts(retryDelays: retryDelays, pause: ghPause) {
+        let outcome = await attempts(retryDelays: retryDelays, pause: ghPause, answered: answered) {
             await Shell.run(Shell.ghPath ?? "gh", args, cwd: cwd)
         } quotaReset: {
             let result = await Shell.run(
@@ -214,7 +223,7 @@ public enum PullRequests {
     /// isn't retried, as seconds later it would only fail again and count
     /// against the limit. `quotaReset` says when the limit lifts, if it can.
     static func attempts(
-        retryDelays: [Int], pause: RateLimitPause,
+        retryDelays: [Int], pause: RateLimitPause, answered: (ShellResult) -> Bool = { $0.ok },
         run: () async -> ShellResult, quotaReset: @Sendable () async -> Date?
     ) async -> Result<ShellResult, RateLimitError> {
         var delays = retryDelays.makeIterator()
@@ -223,7 +232,7 @@ public enum PullRequests {
                 return .failure(RateLimitError(until: until))
             }
             let result = await run()
-            if result.ok {
+            if answered(result) {
                 await pause.succeeded()
                 return .success(result)
             }
@@ -262,18 +271,38 @@ public enum PullRequests {
         public let queue: [Int: PullRequest.QueueEntry]
         /// The numbers of the open PRs with a workflow waiting for approval.
         public let awaitingApproval: Set<Int>
-        /// The last merged first.
+        /// The pinned PRs that have been merged or closed, and the last
+        /// merged of the others, the last merged or closed first.
         public let merged: [PullRequest]
         /// Whether the repository has issues turned on. With them off, it has
         /// none to list, open or closed.
         public let issuesEnabled: Bool
         /// The newest first.
         public let openIssues: [Issue]
-        /// The last closed first.
+        /// The pinned issues that have been closed, and the last closed of
+        /// the others, the last closed first.
         public let closedIssues: [Issue]
     }
 
-    /// How many merged PRs, and how many closed issues, a repository shows.
+    /// The numbers of the PRs and issues pinned in a repository, which stay
+    /// listed once merged or closed.
+    public struct Pinned: Sendable, Equatable {
+        public var pullRequests: Set<Int>
+        public var issues: Set<Int>
+
+        public init(pullRequests: Set<Int> = [], issues: Set<Int> = []) {
+            self.pullRequests = pullRequests
+            self.issues = issues
+        }
+    }
+
+    /// How the query names the lookup of a pinned PR or issue, by its
+    /// number, as GraphQL takes no list of them.
+    static let pinnedPRAlias = "pinnedPR"
+    static let pinnedIssueAlias = "pinnedIssue"
+
+    /// How many merged PRs, and how many closed issues, a repository shows,
+    /// apart from the pinned ones.
     static let latestShown = 3
     /// How many recently updated merged PRs, and closed issues, are searched
     /// for those. GitHub can't order by merge or close time, but nothing is
@@ -285,9 +314,15 @@ public enum PullRequests {
     /// One query for these and the issues, as every repository's PRs are
     /// reloaded on each refresh and every `gh` call counts against the GitHub
     /// rate limit. The issues come along whether or not the tab shows them,
-    /// for less than another call would cost.
-    public static func extras(in repo: GitHubRepo, cwd: URL) async throws -> Extras {
+    /// for less than another call would cost, and so do the `pinned` ones.
+    public static func extras(in repo: GitHubRepo, cwd: URL, pinned: Pinned = Pinned()) async throws -> Extras {
+        let prFields = "number title url isDraft author { login } headRefName updatedAt mergedAt closedAt"
         let issueFields = "number title url author { login } updatedAt closedAt stateReason"
+        let pinnedLookups = pinned.pullRequests.sorted().map {
+            "\(pinnedPRAlias)\($0): pullRequest(number: \($0)) { \(prFields) }"
+        } + pinned.issues.sorted().map {
+            "\(pinnedIssueAlias)\($0): issue(number: \($0)) { \(issueFields) }"
+        }
         let query = """
         query($owner: String!, $name: String!) {
           repository(owner: $owner, name: $name) {
@@ -299,7 +334,7 @@ public enum PullRequests {
               }
             }
             merged: pullRequests(states: MERGED, first: \(latestSearched), orderBy: {field: UPDATED_AT, direction: DESC}) {
-              nodes { number title url isDraft author { login } headRefName updatedAt mergedAt }
+              nodes { \(prFields) }
             }
             hasIssuesEnabled
             openIssues: issues(states: OPEN, first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
@@ -308,20 +343,81 @@ public enum PullRequests {
             closedIssues: issues(states: CLOSED, first: \(latestSearched), orderBy: {field: UPDATED_AT, direction: DESC}) {
               nodes { \(issueFields) }
             }
+            \(pinnedLookups.joined(separator: "\n    "))
           }
         }
         """
         let result = try await gh([
             "api", "graphql", "-f", "query=\(query)", "-f", "owner=\(repo.owner)", "-f", "name=\(repo.name)",
-            "--jq", ".data.repository",
-        ], cwd: cwd)
-        guard result.ok else {
+        ], cwd: cwd, answered: answered)
+        guard answered(result) else {
             throw ShellError(message: "merge queue, merged pull requests and issues lookup failed: \(result.err)")
         }
-        return try decodeExtras(result.stdout)
+        return try decodeExtras(result.stdout, pinned: pinned)
     }
 
-    public static func decodeExtras(_ json: String) throws -> Extras {
+    /// Whether `gh api graphql` got an answer: it fails when anything in the
+    /// query does, but a pinned PR or issue that's gone, deleted or never
+    /// there, only takes its own lookup with it, and the rest of the answer
+    /// stands.
+    static func answered(_ result: ShellResult) -> Bool {
+        if result.ok { return true }
+        struct Failure: Decodable {
+            let type: String?
+            let path: [String]?
+        }
+        struct Envelope: Decodable {
+            struct Body: Decodable {
+                let repository: [String: JSONValue]?
+            }
+            let data: Body?
+            let errors: [Failure]?
+        }
+        guard let envelope = try? JSONDecoder().decode(Envelope.self, from: Data(result.stdout.utf8)),
+              envelope.data?.repository != nil, let errors = envelope.errors, !errors.isEmpty else { return false }
+        return errors.allSatisfy { error in
+            guard error.type == "NOT_FOUND", let path = error.path, path.count == 2, path[0] == "repository"
+            else { return false }
+            return path[1].hasPrefix(pinnedPRAlias) || path[1].hasPrefix(pinnedIssueAlias)
+        }
+    }
+
+    /// Any JSON at all, for `answered` to see past the parts it doesn't read.
+    private struct JSONValue: Decodable {
+        init(from decoder: Decoder) throws {}
+    }
+
+    /// The pinned PRs and issues an answer looked up, the ones not found left out.
+    private struct PinnedNodes: Decodable {
+        let pullRequests: [PullRequest]
+        let issues: [Issue]
+
+        struct Key: CodingKey {
+            let stringValue: String
+            var intValue: Int? { nil }
+            init(stringValue: String) { self.stringValue = stringValue }
+            init?(intValue: Int) { nil }
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: Key.self)
+            var pullRequests: [PullRequest] = []
+            var issues: [Issue] = []
+            for key in container.allKeys {
+                if key.stringValue.hasPrefix(PullRequests.pinnedPRAlias) {
+                    try container.decodeIfPresent(PullRequest.self, forKey: key).map { pullRequests.append($0) }
+                } else if key.stringValue.hasPrefix(PullRequests.pinnedIssueAlias) {
+                    try container.decodeIfPresent(Issue.self, forKey: key).map { issues.append($0) }
+                }
+            }
+            self.pullRequests = pullRequests
+            self.issues = issues
+        }
+    }
+
+    /// What `gh api graphql` answered: the whole response, as a failure
+    /// `answered` lets through isn't trimmed to its data by `--jq`.
+    public static func decodeExtras(_ json: String, pinned: Pinned = Pinned()) throws -> Extras {
         struct Connection<Node: Decodable>: Decodable {
             let nodes: [Node]
         }
@@ -347,6 +443,18 @@ public enum PullRequests {
                 }
             }
         }
+        struct Envelope: Decodable {
+            struct Body: Decodable {
+                let repository: Response
+            }
+            let data: Body
+        }
+        struct PinnedEnvelope: Decodable {
+            struct Body: Decodable {
+                let repository: PinnedNodes
+            }
+            let data: Body
+        }
         struct Response: Decodable {
             let open: Connection<OpenNode>
             let merged: Connection<PullRequest>
@@ -354,16 +462,30 @@ public enum PullRequests {
             let openIssues: Connection<Issue>
             let closedIssues: Connection<Issue>
         }
-        let response = try decoder.decode(Response.self, from: Data(json.utf8))
+        let response = try decoder.decode(Envelope.self, from: Data(json.utf8)).data.repository
+        let pinnedNodes = try decoder.decode(PinnedEnvelope.self, from: Data(json.utf8)).data.repository
         let queue = Dictionary(
             response.open.nodes.compactMap { node in node.mergeQueueEntry.map { (node.number, $0) } },
             uniquingKeysWith: { first, _ in first })
         let awaitingApproval = Set(response.open.nodes.filter(\.awaitsApproval).map(\.number))
-        let merged = response.merged.nodes.sorted { ($0.mergedAt ?? .distantPast) > ($1.mergedAt ?? .distantPast) }
-        let closed = response.closedIssues.nodes.sorted { ($0.closedAt ?? .distantPast) > ($1.closedAt ?? .distantPast) }
-        return Extras(queue: queue, awaitingApproval: awaitingApproval, merged: Array(merged.prefix(latestShown)),
+        let merged = latest(response.merged.nodes, pinned: pinnedNodes.pullRequests,
+                            pinnedNumbers: pinned.pullRequests) { $0.mergedAt ?? $0.closedAt }
+        let closed = latest(response.closedIssues.nodes, pinned: pinnedNodes.issues,
+                            pinnedNumbers: pinned.issues) { $0.closedAt }
+        return Extras(queue: queue, awaitingApproval: awaitingApproval, merged: merged,
                       issuesEnabled: response.hasIssuesEnabled, openIssues: response.openIssues.nodes,
-                      closedIssues: Array(closed.prefix(latestShown)))
+                      closedIssues: closed)
+    }
+
+    /// The pinned items that have been closed, and the last closed of the
+    /// others among `searched`, the last closed first. A pinned one still
+    /// open is in the open list instead.
+    static func latest<Item: Identifiable>(
+        _ searched: [Item], pinned: [Item], pinnedNumbers: Set<Int>, closedAt: (Item) -> Date?
+    ) -> [Item] where Item.ID == Int {
+        let byClose = { (a: Item, b: Item) in (closedAt(a) ?? .distantPast) > (closedAt(b) ?? .distantPast) }
+        let others = searched.filter { !pinnedNumbers.contains($0.id) }.sorted(by: byClose).prefix(latestShown)
+        return (pinned.filter { closedAt($0) != nil } + others).sorted(by: byClose)
     }
 
     /// `prs` with their merge queue entries and workflow approvals filled in,

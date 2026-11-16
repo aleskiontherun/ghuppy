@@ -3,6 +3,9 @@ import SwiftUI
 
 struct PRRow: View {
     let pr: PullRequest
+    let github: GitHubRepo
+
+    @State private var hovering = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -25,12 +28,17 @@ struct PRRow: View {
             Spacer(minLength: 8)
 
             Text(pr.authorLogin.map { "\($0) · " } ?? "")
-                + Text(pr.mergedAt ?? pr.updatedAt, format: .relative(presentation: .named))
+                + Text(pr.mergedAt ?? pr.closedAt ?? pr.updatedAt, format: .relative(presentation: .named))
+
+            RowPinButton(number: pr.number, kind: .pullRequest, repo: github, rowHovered: hovering)
         }
         .font(.callout)
-        .padding(.horizontal, 12)
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
         .padding(.vertical, 4)
         .foregroundStyle(.secondary)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 
     @ViewBuilder
@@ -47,6 +55,8 @@ struct PRRow: View {
     private var checksIcon: some View {
         if pr.mergedAt != nil {
             Image(systemName: "arrow.triangle.merge").foregroundStyle(Color.softPurple).tooltip("Merged")
+        } else if pr.closedAt != nil {
+            Image(systemName: "xmark.circle").foregroundStyle(.gray).tooltip("Closed without merging")
         } else {
             openChecksIcon
         }
