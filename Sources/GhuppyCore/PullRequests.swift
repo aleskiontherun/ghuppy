@@ -29,9 +29,9 @@ public struct PullRequest: Sendable, Identifiable, Codable, Equatable, Authored 
     public let updatedAt: Date
     /// When the PR was merged, nil while it's open.
     public let mergedAt: Date?
-    /// When the PR was closed, merged or not, nil while it's open. Only a
-    /// pinned PR is looked up with it: the others closed without merging
-    /// aren't listed.
+    /// When the PR was closed, merged or not, nil while it's open, and
+    /// for an open one `gh pr list` lists. A PR closed without merging is
+    /// only listed while it's pinned.
     public let closedAt: Date?
     public let statusCheckRollup: [Check]?
     /// The PR's place in its base branch's merge queue, nil when it isn't

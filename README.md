@@ -118,7 +118,7 @@ take no request of their own, and a pinned one deleted since is left out.
 
 The **switch beside the author select** (⌘I) shows each repository's issues
 in place of its pull requests: up to 100 open ones, the newest first, then the
-last 3 closed, labelled **Open**, **Closed**, **Not planned** or **Duplicate**.
+pinned ones closed and the last 3 others closed, labelled **Open**, **Closed**, **Not planned** or **Duplicate**.
 A repository with issues turned off says so. Both load on every refresh,
 in the same request as the pull requests' merge queue, so switching shows
 them at once and takes no request of its own, and the check for changes every
