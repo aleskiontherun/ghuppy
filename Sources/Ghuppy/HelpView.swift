@@ -78,6 +78,9 @@ private struct ActionList: View {
             Action(name: "Pin", description: "Keep it at the top of the list"),
             Action(name: "Its actions", description: "Run what its ghuppy.yaml offers"),
         ]),
+        ("On a pull request or issue", [
+            Action(name: "Pin", description: "Keep it listed once merged or closed"),
+        ]),
         ("Log", [
             Action(name: "Show or Hide", description: "Toggle the log", shortcut: "⌘L"),
             Action(name: "Clear", description: "Empty the log tab on screen", shortcut: "⌘K"),

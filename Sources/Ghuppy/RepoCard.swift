@@ -257,11 +257,13 @@ struct RepoCard: View {
         let merged = PullRequests.filter(repo.mergedPullRequests, author: model.authorFilter)
         return VStack(alignment: .leading, spacing: 0) {
             status(error: repo.prError, empty: open.isEmpty, loaded: repo.prsLoaded, noun: "pull requests")
-            ForEach(open) { pr in
-                PRRow(pr: pr)
-            }
-            ForEach(merged) { pr in
-                PRRow(pr: pr)
+            if let github = repo.github {
+                ForEach(open) { pr in
+                    PRRow(pr: pr, github: github)
+                }
+                ForEach(merged) { pr in
+                    PRRow(pr: pr, github: github)
+                }
             }
         }
     }
@@ -275,11 +277,13 @@ struct RepoCard: View {
             } else {
                 status(error: repo.extrasError, empty: open.isEmpty, loaded: repo.issuesLoaded, noun: "issues")
             }
-            ForEach(open) { issue in
-                IssueRow(issue: issue)
-            }
-            ForEach(closed) { issue in
-                IssueRow(issue: issue)
+            if let github = repo.github {
+                ForEach(open) { issue in
+                    IssueRow(issue: issue, github: github)
+                }
+                ForEach(closed) { issue in
+                    IssueRow(issue: issue, github: github)
+                }
             }
         }
     }

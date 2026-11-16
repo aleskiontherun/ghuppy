@@ -6,9 +6,10 @@ A small macOS app for keeping a folder full of git checkouts tidy. Pick a
 working directory, and Ghuppy lists every repository under it, with a link
 to each one on GitHub and its pull requests underneath: the ones ready to
 merge, then the other open ones, then the ones in the merge queue, the next to
-merge last, then the last 3 merged, the last merged first. Or, switched to
-issues, its open issues, the newest first, then the last 3 closed, the last
-closed first.
+merge last, then the pinned ones merged or closed and the last 3 others
+merged, the last merged first. Or, switched to issues, its open issues, the
+newest first, then the pinned ones closed and the last 3 others closed, the
+last closed first.
 
 - **Ghuppy!** — `git fetch --prune`, then delete local branches whose work has
   actually landed and the worktrees left behind with them, then a
@@ -76,7 +77,7 @@ on screen stay as they were. Ghuppy! carries on meanwhile, and keeps any branch 
 pull request it can't check.
 
 A pull request shows one label, the first of these that applies: **Merged**,
-**Queued**, **Draft**, **Changes**, **Conflicts**, **Failed**, **Update**,
+**Closed** (without merging, which only a pinned one shows), **Queued**, **Draft**, **Changes**, **Conflicts**, **Failed**, **Update**,
 **Approve**, **Review**, **CI**, **Blocked**, **Ready**, **Approved**, **…**.
 The icon beside it shows how its checks are doing either way.
 
@@ -107,9 +108,17 @@ the first time after each launch. Ghuppy ’em all! (⇧⌘G) and Refresh All
 (⇧⌘R) cover every repository either way. Each tab remembers its own setting,
 across launches too.
 
+Pin a pull request or issue (the pin at the end of its row, there while the
+pointer is over the row) to keep it listed once it's merged or closed, however
+long ago, along with the last 3 others. A pinned one keeps its pin in sight.
+Unpinning one leaves it on screen until the repository next reloads. Pins are
+saved, and shared by every checkout of the repository on GitHub, in any tab.
+The pinned ones are looked up in the request that loads the issues, so they
+take no request of their own, and a pinned one deleted since is left out.
+
 The **switch beside the author select** (⌘I) shows each repository's issues
 in place of its pull requests: up to 100 open ones, the newest first, then the
-last 3 closed, labelled **Open**, **Closed**, **Not planned** or **Duplicate**.
+pinned ones closed and the last 3 others closed, labelled **Open**, **Closed**, **Not planned** or **Duplicate**.
 A repository with issues turned off says so. Both load on every refresh,
 in the same request as the pull requests' merge queue, so switching shows
 them at once and takes no request of its own, and the check for changes every
@@ -120,7 +129,7 @@ launches too.
 The **Author** select narrows the pull requests or issues on screen to one
 person's, out of everyone with one listed; every repository stays in the list.
 The last 3 merged or closed are the repository's, so fewer than 3 of them may
-be that person's. It only changes what is shown: Ghuppy ’em all! acts as
+be that person's, and the pinned ones show only when they're that person's. It only changes what is shown: Ghuppy ’em all! acts as
 before, and the select stays usable while one runs. Each tab remembers its own
 choice, across launches too, until its working directory changes.
 

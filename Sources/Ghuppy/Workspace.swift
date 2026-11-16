@@ -28,11 +28,14 @@ final class RepoState: Identifiable {
     var branches: Branches?
     /// The open pull requests, the ones in the merge queue last, the next to merge at the very end.
     var pullRequests: [PullRequest] = []
-    /// The latest merged pull requests, the last merged first.
+    /// The pinned pull requests that have been merged or closed, and the
+    /// latest merged others, the last merged or closed first, as the last
+    /// reload found them.
     var mergedPullRequests: [PullRequest] = []
     /// The open issues, the newest first.
     var issues: [Issue] = []
-    /// The latest closed issues, the last closed first.
+    /// The pinned issues that have been closed, and the latest closed
+    /// others, the last closed first, as the last reload found them.
     var closedIssues: [Issue] = []
     /// Whether the repository has issues turned on.
     var issuesEnabled = true
@@ -632,8 +635,11 @@ final class Workspace: Identifiable {
             let open = try await loading(repo, error: \.prError, prefix: "pull requests: ") {
                 try await PullRequests.open(in: github, cwd: repo.git.path)
             }
+            // The pins as they stand now: one taken out meanwhile stays on
+            // screen until the next reload, and one put in shows from it on.
+            let pinned = RowPins.shared.pinned(in: github)
             let extras = try await loading(repo, error: \.extrasError) {
-                try await PullRequests.extras(in: github, cwd: repo.git.path)
+                try await PullRequests.extras(in: github, cwd: repo.git.path, pinned: pinned)
             }
             if let extras {
                 repo.mergedPullRequests = extras.merged

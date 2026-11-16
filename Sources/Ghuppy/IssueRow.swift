@@ -34,6 +34,9 @@ extension Issue.Label {
 /// An issue, laid out as `PRRow` lays out a pull request, so the two line up.
 struct IssueRow: View {
     let issue: Issue
+    let github: GitHubRepo
+
+    @State private var hovering = false
 
     var body: some View {
         let label = issue.label
@@ -58,10 +61,15 @@ struct IssueRow: View {
 
             Text(issue.authorLogin.map { "\($0) · " } ?? "")
                 + Text(issue.closedAt ?? issue.updatedAt, format: .relative(presentation: .named))
+
+            RowPinButton(number: issue.number, kind: .issue, repo: github, rowHovered: hovering)
         }
         .font(.callout)
-        .padding(.horizontal, 12)
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
         .padding(.vertical, 4)
         .foregroundStyle(.secondary)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
