@@ -184,3 +184,16 @@ struct MarkdownPageTests {
         #expect(MarkdownPage.splitFrontMatter("Text\n---\nname: x\n---").0 == nil)
     }
 }
+
+struct MarkdownChangeTests {
+    @Test func changesInsideGitOrSkippedFoldersDontCount() {
+        #expect(!MarkdownFiles.couldChange(paths: ["/w/app/.git/objects/ab/", "/w/app/.build/debug/"]))
+        #expect(!MarkdownFiles.couldChange(paths: ["/w/web/node_modules/pkg/"]))
+        #expect(!MarkdownFiles.couldChange(paths: []))
+    }
+
+    @Test func otherChangesDo() {
+        #expect(MarkdownFiles.couldChange(paths: ["/w/app/.git/", "/w/app/docs/"]))
+        #expect(MarkdownFiles.couldChange(paths: ["/w/.github-notes/"]))
+    }
+}

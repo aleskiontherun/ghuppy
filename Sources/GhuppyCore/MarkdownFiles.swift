@@ -43,6 +43,16 @@ public enum MarkdownFiles {
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
+    /// Whether a change to the contents of any of `paths`, directories as a
+    /// `DirectoryWatcher` reports them, could add or remove a file `list`
+    /// finds. One inside a `.git`, or inside a folder the walk never enters,
+    /// such as `node_modules`, can't: nearly all of a build's or a fetch's.
+    public static func couldChange(paths: [String]) -> Bool {
+        paths.contains { path in
+            !path.split(separator: "/").contains { Discovery.skippedNames.contains(String($0)) }
+        }
+    }
+
     /// The Markdown files outside every checkout, by absolute path.
     private static func walk(_ root: URL) -> [String] {
         var found: [String] = []

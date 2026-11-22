@@ -5,8 +5,8 @@ import SwiftUI
 
 /// The open tabs, saved to user defaults whenever a tab is opened, closed,
 /// moved, selected, pointed at a different folder, has Pinned only switched
-/// on or off, is switched between pull requests and issues, or has another
-/// author chosen. What their cards show is saved
+/// on or off, is switched between pull requests, issues and files, or has
+/// another author or file chosen. What their cards show is saved
 /// too, to a file, for the next launch to show at once.
 @MainActor @Observable
 final class Tabs {
@@ -14,8 +14,14 @@ final class Tabs {
     private static let selectedKey = "selectedTab"
     /// Each tab's Pinned only setting, in the order of `tabsKey`.
     private static let pinnedOnlyKey = "pinnedOnlyTabs"
-    /// Whether each tab lists issues, in the order of `tabsKey`.
-    private static let showsIssuesKey = "showsIssuesTabs"
+    /// What each tab lists, a `Listing`, in the order of `tabsKey`.
+    private static let listingKey = "listingTabs"
+    /// Whether each tab lists issues, kept before there were files to list,
+    /// and read while `listingKey` isn't there.
+    private static let legacyShowsIssuesKey = "showsIssuesTabs"
+    /// The file each tab's Files view shows, in the order of `tabsKey`,
+    /// empty while none has been chosen.
+    private static let chosenFileKey = "chosenFileTabs"
     /// Each tab's chosen author, in the order of `tabsKey`, empty for everyone.
     private static let authorFilterKey = "authorFilterTabs"
     /// Where the single working directory was kept before there were tabs.
@@ -54,16 +60,19 @@ final class Tabs {
             ?? defaults.string(forKey: Self.legacyRootKey).map { [$0] }
             ?? []
         let pinnedOnly = defaults.array(forKey: Self.pinnedOnlyKey) as? [Bool] ?? []
-        let showsIssues = defaults.array(forKey: Self.showsIssuesKey) as? [Bool] ?? []
+        let listings = defaults.stringArray(forKey: Self.listingKey)?.map { Listing(rawValue: $0) ?? .pullRequests }
+            ?? (defaults.array(forKey: Self.legacyShowsIssuesKey) as? [Bool] ?? []).map { $0 ? .issues : .pullRequests }
         let authors = defaults.stringArray(forKey: Self.authorFilterKey) ?? []
+        let files = defaults.stringArray(forKey: Self.chosenFileKey) ?? []
         var workspaces = paths.enumerated().map { index, path in
             // A folder that has since been moved or deleted reopens as a
             // clean tab rather than disappearing along with its position.
             Workspace(root: !path.isEmpty && FileManager.default.fileExists(atPath: path)
                       ? URL(fileURLWithPath: path) : nil,
                       pinnedOnly: pinnedOnly.indices.contains(index) && pinnedOnly[index],
-                      showsIssues: showsIssues.indices.contains(index) && showsIssues[index],
-                      authorFilter: authors.indices.contains(index) && !authors[index].isEmpty ? authors[index] : nil)
+                      listing: listings.indices.contains(index) ? listings[index] : .pullRequests,
+                      authorFilter: authors.indices.contains(index) && !authors[index].isEmpty ? authors[index] : nil,
+                      chosenFile: files.indices.contains(index) && !files[index].isEmpty ? files[index] : nil)
         }
         if workspaces.isEmpty {
             workspaces = [Workspace()]
@@ -121,7 +130,8 @@ final class Tabs {
         let defaults = UserDefaults.standard
         defaults.set(workspaces.map { $0.root?.path ?? "" }, forKey: Self.tabsKey)
         defaults.set(workspaces.map(\.pinnedOnly), forKey: Self.pinnedOnlyKey)
-        defaults.set(workspaces.map(\.showsIssues), forKey: Self.showsIssuesKey)
+        defaults.set(workspaces.map(\.listing.rawValue), forKey: Self.listingKey)
+        defaults.set(workspaces.map { $0.chosenFile ?? "" }, forKey: Self.chosenFileKey)
         defaults.set(workspaces.map { $0.authorFilter ?? "" }, forKey: Self.authorFilterKey)
         defaults.set(workspaces.firstIndex { $0.id == selectedID } ?? 0, forKey: Self.selectedKey)
     }

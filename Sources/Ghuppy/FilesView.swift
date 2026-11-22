@@ -1,0 +1,148 @@
+import AppKit
+import GhuppyCore
+import SwiftUI
+
+/// The tab's Markdown files: every folder holding one down the side, all
+/// of them open, and the file chosen, or else the README, beside them.
+struct FilesView: View {
+    @Environment(Workspace.self) private var model
+    @AppStorage("filesPaneWidth") private var paneWidth = 260.0
+
+    /// The widths the side pane can take beside the file, which always
+    /// keeps enough room to read.
+    static func widths(sharing available: Double) -> ClosedRange<Double> {
+        let narrowest = 160.0
+        return narrowest...max(narrowest, available - 320)
+    }
+
+    var body: some View {
+        Group {
+            if let files = model.markdownFiles, files.isEmpty {
+                ContentUnavailableView("No Markdown files", systemImage: "doc.text",
+                                       description: Text("No Markdown files were found under this folder."))
+            } else if model.markdownFiles == nil {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                GeometryReader { proxy in
+                    let widths = Self.widths(sharing: proxy.size.width)
+                    HStack(spacing: 0) {
+                        FileList()
+                            .frame(width: paneWidth.clamped(to: widths))
+                        ResizeHandle(length: $paneWidth, range: widths, axis: .horizontal)
+                        FileDocument()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+            }
+        }
+        // On coming on screen: switching to the Files view, or to the tab.
+        .task { model.listFiles() }
+    }
+}
+
+/// The side pane: each folder's files under it, indented as deep as it lies.
+private struct FileList: View {
+    @Environment(Workspace.self) private var model
+
+    var body: some View {
+        let selection = Binding<String?>(
+            get: { model.shownFile },
+            set: { if let path = $0 { model.chosenFile = path } }
+        )
+        ScrollViewReader { proxy in
+            List(selection: selection) {
+                ForEach(model.markdownRows) { row in
+                    FileRow(row: row)
+                        .tag(Optional(row.id))
+                        .selectionDisabled(row.kind == .folder)
+                        .id(row.id)
+                }
+            }
+            .listStyle(.sidebar)
+            .onAppear {
+                if let shown = model.shownFile { proxy.scrollTo(shown, anchor: .center) }
+            }
+        }
+    }
+}
+
+private struct FileRow: View {
+    @Environment(Workspace.self) private var model
+    let row: MarkdownTree.Row
+
+    var body: some View {
+        Label {
+            Text(row.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        } icon: {
+            Image(systemName: row.kind == .folder ? "folder" : "doc.text")
+        }
+        .foregroundStyle(row.kind == .folder ? .secondary : .primary)
+        .padding(.leading, Double(row.depth) * 14)
+        .contextMenu {
+            if let url = model.root?.appending(path: row.path) {
+                Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                Button("Copy Path") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url.path, forType: .string)
+                }
+                if row.kind == .file {
+                    Button("Open in Default App") { NSWorkspace.shared.open(url) }
+                }
+            }
+        }
+    }
+}
+
+/// The file shown, under a bar naming it.
+private struct FileDocument: View {
+    @Environment(Workspace.self) private var model
+
+    var body: some View {
+        if let root = model.root, let path = model.shownFile {
+            VStack(spacing: 0) {
+                header(root.appending(path: path), path: path)
+                Divider()
+                MarkdownWebView(root: root, path: path, revision: model.shownFileRevision) { chosen in
+                    model.chosenFile = chosen
+                }
+            }
+        } else {
+            ContentUnavailableView("No file chosen", systemImage: "doc.text",
+                                   description: Text("Choose a file on the left to read it."))
+        }
+    }
+
+    private func header(_ url: URL, path: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.text")
+                .foregroundStyle(.secondary)
+            Text(path)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .textSelection(.enabled)
+            Spacer()
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } label: {
+                Label("Reveal in Finder", systemImage: "folder")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderless)
+            .tooltip("Reveal in Finder")
+            Button {
+                NSWorkspace.shared.open(url)
+            } label: {
+                Label("Open in Default App", systemImage: "arrow.up.forward.app")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderless)
+            .tooltip("Open in default app")
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .frame(height: 32)
+    }
+}

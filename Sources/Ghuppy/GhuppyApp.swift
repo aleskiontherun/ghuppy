@@ -53,6 +53,17 @@ struct GhuppyApp: App {
             }
             // Nothing here prints, and ⌘P has a job in the Repositories menu.
             CommandGroup(replacing: .printItem) {}
+            // Not disabled, as the author select isn't: they only change what is shown.
+            CommandGroup(before: .toolbar) {
+                ForEach(Listing.allCases, id: \.self) { listing in
+                    Toggle(listing.name, isOn: Binding(
+                        get: { tabs.selected.listing == listing },
+                        set: { if $0 { tabs.selected.listing = listing } }
+                    ))
+                    .keyboardShortcut(listing.key)
+                }
+                Divider()
+            }
             CommandGroup(after: .toolbar) {
                 Button(showLog ? "Hide Log" : "Show Log") { showLog.toggle() }
                     .keyboardShortcut("l")
@@ -81,14 +92,9 @@ struct GhuppyApp: App {
                     .keyboardShortcut("d", modifiers: [.command, .shift])
                 }
                 .disabled(!tabs.selected.canAct)
-                // Not disabled, as the author select isn't: it only changes what is shown.
-                Toggle("Show Issues", isOn: Binding(
-                    get: { tabs.selected.showsIssues },
-                    set: { tabs.selected.showsIssues = $0 }
-                ))
-                .keyboardShortcut("i")
                 Button("Choose Author…") { tabs.authorMenuRequests += 1 }
                     .keyboardShortcut("u")
+                    .disabled(tabs.selected.listing == .files)
                 Divider()
                 Group {
                     Button("Refresh") { tabs.selected.refresh() }
