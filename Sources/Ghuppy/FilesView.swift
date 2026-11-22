@@ -2,8 +2,9 @@ import AppKit
 import GhuppyCore
 import SwiftUI
 
-/// The tab's Markdown files: every folder holding one down the side, all
-/// of them open, and the file chosen, or else the README, beside them.
+/// The tab's Markdown files: every folder holding one down the side, each
+/// open until it's closed, and the file chosen, or else the README, beside
+/// them.
 struct FilesView: View {
     @Environment(Workspace.self) private var model
     @AppStorage("filesPaneWidth") private var paneWidth = 260.0
