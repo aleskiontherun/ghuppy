@@ -113,7 +113,7 @@ public enum MarkdownFiles {
 }
 
 /// The Files view's side pane: every folder holding a Markdown file, as deep
-/// as it lies, with all of them open.
+/// as it lies, each open unless it has been closed.
 public enum MarkdownTree {
     public struct Row: Identifiable, Hashable, Sendable {
         public enum Kind: Sendable { case folder, file }
@@ -156,6 +156,18 @@ public enum MarkdownTree {
         var rows: [Row] = []
         append(top, at: "", depth: 0, to: &rows)
         return rows
+    }
+
+    /// `rows` without what lies inside the folders in `collapsed`, given
+    /// by their rows' paths.
+    public static func visible(_ rows: [Row], collapsed: Set<String>) -> [Row] {
+        guard !collapsed.isEmpty else { return rows }
+        var hiddenUnder: String?
+        return rows.filter { row in
+            if let hiddenUnder, row.path.hasPrefix(hiddenUnder) { return false }
+            hiddenUnder = row.kind == .folder && collapsed.contains(row.path) ? row.path + "/" : nil
+            return true
+        }
     }
 
     private static func append(_ node: Node, at path: String, depth: Int, to rows: inout [Row]) {

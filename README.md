@@ -139,7 +139,9 @@ choice, across launches too, until its working directory changes.
 The third place on the switch beside the author select (⌘3) shows the
 working directory's Markdown files in place of the repositories: every
 folder holding one, all of them open, down the side, and the file chosen
-there beside them, rendered as GitHub renders it, light or dark with the
+there beside them. Clicking a folder closes it, and clicking it again opens
+it; folders closed stay closed until the working directory changes or
+Ghuppy quits. The file is rendered as GitHub renders it, light or dark with the
 system. Until one is chosen, it's the README at the top of the working
 directory, or else the one nearest the top. Each tab remembers its own
 choice, across launches too, until its working directory changes. The author

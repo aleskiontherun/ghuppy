@@ -234,6 +234,13 @@ final class Workspace: Identifiable {
     /// until first listed, and the side pane's rows for them.
     private(set) var markdownFiles: [String]?
     private(set) var markdownRows: [MarkdownTree.Row] = []
+    /// The side pane's folders that have been closed, by path. They all
+    /// start open.
+    var collapsedFolders: Set<String> = []
+    /// The side pane's rows, without what the closed folders hold.
+    var visibleMarkdownRows: [MarkdownTree.Row] {
+        MarkdownTree.visible(markdownRows, collapsed: collapsedFolders)
+    }
     /// The file chosen in the Files view, relative to the working directory,
     /// nil until one is.
     var chosenFile: String? {
@@ -307,6 +314,7 @@ final class Workspace: Identifiable {
         stopListingFiles()
         markdownFiles = nil
         markdownRows = []
+        collapsedFolders = []
         chosenFile = nil
         directorySize = nil
         freeSpace = nil

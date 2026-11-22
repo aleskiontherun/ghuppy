@@ -197,3 +197,28 @@ struct MarkdownChangeTests {
         #expect(MarkdownFiles.couldChange(paths: ["/w/.github-notes/"]))
     }
 }
+
+struct MarkdownTreeCollapseTests {
+    private let rows = MarkdownTree.rows(for: [
+        "README.md", "app/README.md", "app/docs/adr/one.md", "app/docs/guide.md", "app-notes/todo.md",
+    ])
+
+    private func visible(_ collapsed: String...) -> [String] {
+        MarkdownTree.visible(rows, collapsed: Set(collapsed)).map(\.id)
+    }
+
+    @Test func everythingShowsWithNothingClosed() {
+        #expect(visible() == rows.map(\.id))
+    }
+
+    @Test func aClosedFolderHidesAllItHolds() {
+        // Not the folder beside it whose name starts the same.
+        #expect(visible("app") == ["README.md", "app/", "app-notes/", "app-notes/todo.md"])
+        #expect(visible("app/docs") == ["README.md", "app/", "app/README.md", "app/docs/", "app-notes/", "app-notes/todo.md"])
+    }
+
+    @Test func aFolderClosedInsideAClosedOneIsHiddenWithIt() {
+        #expect(visible("app", "app/docs") == visible("app"))
+        #expect(visible("app/docs/adr") == rows.map(\.id).filter { $0 != "app/docs/adr/one.md" })
+    }
+}

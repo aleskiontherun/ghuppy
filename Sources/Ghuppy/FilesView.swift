@@ -41,7 +41,8 @@ struct FilesView: View {
     }
 }
 
-/// The side pane: each folder's files under it, indented as deep as it lies.
+/// The side pane: each folder's files under it, indented as deep as it
+/// lies. Clicking a folder closes it, or opens it again.
 private struct FileList: View {
     @Environment(Workspace.self) private var model
 
@@ -52,7 +53,7 @@ private struct FileList: View {
         )
         ScrollViewReader { proxy in
             List(selection: selection) {
-                ForEach(model.markdownRows) { row in
+                ForEach(model.visibleMarkdownRows) { row in
                     FileRow(row: row)
                         .tag(Optional(row.id))
                         .selectionDisabled(row.kind == .folder)
@@ -71,16 +72,45 @@ private struct FileRow: View {
     @Environment(Workspace.self) private var model
     let row: MarkdownTree.Row
 
-    var body: some View {
-        Label {
-            Text(row.name)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        } icon: {
-            Image(systemName: row.kind == .folder ? "folder" : "doc.text")
+    private var collapsed: Bool { model.collapsedFolders.contains(row.path) }
+
+    private func toggle() {
+        withAnimation(.snappy(duration: 0.2)) {
+            if collapsed {
+                model.collapsedFolders.remove(row.path)
+            } else {
+                model.collapsedFolders.insert(row.path)
+            }
         }
-        .foregroundStyle(row.kind == .folder ? .secondary : .primary)
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            // A column of its own, which files leave empty, so a folder's
+            // icon lines up with its siblings'.
+            Image(systemName: "chevron.right")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(collapsed ? 0 : 90))
+                .frame(width: 12)
+                .opacity(row.kind == .folder ? 1 : 0)
+            Label {
+                Text(row.name)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } icon: {
+                Image(systemName: row.kind == .folder ? "folder" : "doc.text")
+            }
+            .foregroundStyle(row.kind == .folder ? .secondary : .primary)
+        }
         .padding(.leading, Double(row.depth) * 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        // On a folder alone: on a file it would take the click the list
+        // selects it by.
+        .gesture(TapGesture().onEnded(toggle), including: row.kind == .folder ? .all : .subviews)
+        .accessibilityAddTraits(row.kind == .folder ? .isButton : [])
+        .accessibilityValue(row.kind == .folder ? (collapsed ? "Collapsed" : "Expanded") : "")
         .contextMenu {
             if let url = model.root?.appending(path: row.path) {
                 Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
