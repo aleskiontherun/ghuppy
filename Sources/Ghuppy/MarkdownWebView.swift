@@ -12,7 +12,7 @@ import WebKit
 /// A link to another Markdown file under the working directory opens it in
 /// the view, through `open`; a link to a heading on the page scrolls to it;
 /// a link to any other file shows it in Finder; and a web or mail link opens
-/// in the browser or mail app.
+/// in the browser or mail app. Nothing else the page asks for goes anywhere.
 struct MarkdownWebView: NSViewRepresentable {
     let root: URL
     /// Relative to the root.
@@ -61,12 +61,20 @@ struct MarkdownWebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                      decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
-            guard action.navigationType == .linkActivated, let url = action.request.url else {
-                decisionHandler(.allow)
+            guard let url = action.request.url else {
+                decisionHandler(.cancel)
+                return
+            }
+            guard action.navigationType == .linkActivated else {
+                // Only what the view itself loads: the file shown, read for
+                // the first time or again. Raw HTML in a file can still ask
+                // for more, with a `<meta http-equiv="refresh">` or a
+                // `<form>`, and gets nothing.
+                decisionHandler(isLoaded(url) ? .allow : .cancel)
                 return
             }
             // A heading on the page on screen.
-            if url.scheme == MarkdownFileScheme.name, url.path == webView.url?.path, url.fragment != nil {
+            if isLoaded(url), url.fragment != nil {
                 decisionHandler(.allow)
                 return
             }
@@ -77,8 +85,14 @@ struct MarkdownWebView: NSViewRepresentable {
         /// A link meant for a new window, as raw HTML's `target="_blank"` asks.
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                      for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            if let url = action.request.url { follow(url) }
+            if action.navigationType == .linkActivated, let url = action.request.url { follow(url) }
             return nil
+        }
+
+        /// Whether `url` is the file shown, wherever on the page it points.
+        private func isLoaded(_ url: URL) -> Bool {
+            guard let loaded else { return false }
+            return url.scheme == loaded.scheme && url.host == loaded.host && url.path == loaded.path
         }
 
         private func follow(_ url: URL) {
