@@ -27,6 +27,49 @@ import Testing
     }
 }
 
+@Suite struct GitHubRemoteParsing {
+    let fork = """
+    origin\tgit@github.com:me/hello.git (fetch)
+    origin\tgit@github.com:me/hello.git (push)
+    backup\t/srv/git/hello.git (fetch)
+    backup\t/srv/git/hello.git (push)
+    alice\thttps://github.com/alice/hello (fetch)
+    alice\thttps://github.com/alice/hello (push)
+    upstream\thttps://github.com/octo/hello.git (fetch)
+    upstream\tno_push (push)
+    """
+
+    @Test func ranksUpstreamFirstAndSkipsOtherHosts() {
+        let remotes = GitHubRemote.parse(remotes: fork)
+        #expect(remotes.map(\.name) == ["upstream", "origin", "alice"])
+        #expect(remotes[0].repo == GitHubRepo(owner: "octo", name: "hello"))
+        #expect(remotes[1].repo == GitHubRepo(owner: "me", name: "hello"))
+        #expect(remotes.allSatisfy { !$0.isDefault })
+    }
+
+    @Test func showsUpstreamUntilAnotherIsChosen() {
+        let remotes = GitHubRemote.parse(remotes: fork)
+        #expect(GitHubRemote.shown(among: remotes, chosen: nil)?.name == "upstream")
+        #expect(GitHubRemote.shown(among: remotes, chosen: "origin")?.name == "origin")
+        // A remote chosen once and removed since.
+        #expect(GitHubRemote.shown(among: remotes, chosen: "gone")?.name == "upstream")
+        #expect(GitHubRemote.shown(among: [], chosen: "origin") == nil)
+    }
+
+    @Test func showsWhatGhRepoSetDefaultPicked() {
+        let resolved = "remote.alice.gh-resolved base\nremote.origin.gh-resolved octo/hello\n"
+        let remotes = GitHubRemote.parse(remotes: fork, resolved: resolved)
+        #expect(remotes.filter(\.isDefault).map(\.name) == ["alice"])
+        #expect(GitHubRemote.shown(among: remotes, chosen: nil)?.name == "alice")
+        #expect(GitHubRemote.shown(among: remotes, chosen: "upstream")?.name == "upstream")
+    }
+
+    @Test func showsOriginWithoutAnUpstream() {
+        let remotes = GitHubRemote.parse(remotes: "origin\tgit@github.com:octo/hello.git (fetch)\n")
+        #expect(GitHubRemote.shown(among: remotes, chosen: nil)?.name == "origin")
+    }
+}
+
 @Suite struct PullRequestDecoding {
     func pr(rollup: String, awaitingApproval: Bool = false, extra: String = "") throws -> PullRequest {
         let json = """

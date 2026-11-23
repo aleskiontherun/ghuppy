@@ -327,6 +327,24 @@ final class LogSink {
         #expect(await f.repo.refCounts() == RefCounts(worktrees: 1, localBranches: 3, remoteBranches: 2))
     }
 
+    /// The fixture's `origin` is a local path, which isn't on GitHub.
+    @Test func readsTheGitHubRemotesWithTheOneSetAsDefault() async throws {
+        let f = try await Fixture()
+        defer { f.cleanUp() }
+
+        #expect(await f.repo.gitHubRemotes().isEmpty)
+        try await f.git("remote", "add", "upstream", "https://github.com/octo/hello.git")
+        try await f.git("remote", "add", "fork", "git@github.com:me/hello.git")
+        try await f.git("config", "url.git@github.com:.insteadOf", "gh:")
+        try await f.git("remote", "add", "alice", "gh:alice/hello")
+        try await f.git("config", "remote.fork.gh-resolved", "base")
+
+        let remotes = await f.repo.gitHubRemotes()
+        #expect(remotes.map(\.name) == ["upstream", "alice", "fork"])
+        #expect(remotes[1].repo == GitHubRepo(owner: "alice", name: "hello"))
+        #expect(remotes.filter(\.isDefault).map(\.name) == ["fork"])
+    }
+
     @Test func hasNoCountsOutsideARepository() async throws {
         let f = try await Fixture()
         defer { f.cleanUp() }

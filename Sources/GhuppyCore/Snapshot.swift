@@ -8,7 +8,10 @@ public struct WorkspaceSnapshot: Codable, Sendable, Equatable {
     public struct Repo: Codable, Sendable, Equatable {
         public var path: URL
         public var name: String
-        public var github: GitHubRepo?
+        /// The repository's remotes on GitHub, and the one whose pull
+        /// requests and issues these are.
+        public var remotes: [GitHubRemote]
+        public var remote: GitHubRemote?
         public var status: LocalStatus
         public var branches: Branches?
         public var pullRequests: [PullRequest]
@@ -25,14 +28,16 @@ public struct WorkspaceSnapshot: Codable, Sendable, Equatable {
         public var size: Int64?
         public var refCounts: RefCounts?
 
-        public init(path: URL, name: String, github: GitHubRepo? = nil, status: LocalStatus = LocalStatus(),
+        public init(path: URL, name: String, remotes: [GitHubRemote] = [],
+                    remote: GitHubRemote? = nil, status: LocalStatus = LocalStatus(),
                     branches: Branches? = nil, pullRequests: [PullRequest] = [],
                     mergedPullRequests: [PullRequest] = [], prsLoaded: Bool = false, issues: [Issue] = [],
                     closedIssues: [Issue] = [], issuesEnabled: Bool = true, issuesLoaded: Bool = false,
                     result: Result? = nil, size: Int64? = nil, refCounts: RefCounts? = nil) {
             self.path = path
             self.name = name
-            self.github = github
+            self.remotes = remotes
+            self.remote = remote
             self.status = status
             self.branches = branches
             self.pullRequests = pullRequests
@@ -74,7 +79,7 @@ public struct WorkspaceSnapshot: Codable, Sendable, Equatable {
 public enum Snapshots {
     /// Goes up whenever what's saved changes shape. A file of another
     /// version is passed over rather than read, and the next save replaces it.
-    static let version = 2
+    static let version = 3
 
     private struct Header: Decodable {
         let version: Int

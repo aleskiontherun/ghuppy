@@ -134,6 +134,16 @@ be that person's, and the pinned ones show only when they're that person's. It o
 before, and the select stays usable while one runs. Each tab remembers its own
 choice, across launches too, until its working directory changes.
 
+A repository with more than one remote on GitHub, such as a fork with the
+`upstream` it was forked from, lists one remote's pull requests and issues at
+a time, and shows a **remote menu** beside its link to switch to another. It
+starts on the one `gh` works on: the one `gh repo set-default` picked, else
+`upstream`, then `github`, then `origin`, then the others by name, so a
+fork's card shows its upstream's. A remote chosen is saved, and shared by
+every tab that lists the checkout, and the link, the pins and the check for
+changes every 30 seconds follow it. Ghuppy! still asks `origin` about the
+branches it deletes. The remotes are read again on every refresh.
+
 ## Files
 
 The third place on the switch beside the author select (⌘3) shows the

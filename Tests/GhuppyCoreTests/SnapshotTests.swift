@@ -40,12 +40,16 @@ import Testing
         status.behind = 2
         status.dirty = true
         let prs = try pullRequests()
+        let remotes = [
+            GitHubRemote(name: "upstream", repo: GitHubRepo(owner: "octo", name: "hello"), isDefault: true),
+            GitHubRemote(name: "origin", repo: GitHubRepo(owner: "me", name: "hello")),
+        ]
         return WorkspaceSnapshot(
             root: URL(fileURLWithPath: "/work"),
             repos: [
                 WorkspaceSnapshot.Repo(
                     path: URL(fileURLWithPath: "/work/hello"), name: "hello",
-                    github: GitHubRepo(owner: "octo", name: "hello"), status: status,
+                    remotes: remotes, remote: remotes[0], status: status,
                     branches: Branches(local: [Branches.Local(name: "main", upstream: "origin/main")],
                                        remote: ["origin/feature/x"]),
                     pullRequests: prs, mergedPullRequests: [], prsLoaded: true,
