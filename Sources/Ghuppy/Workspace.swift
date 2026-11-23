@@ -666,32 +666,40 @@ final class Workspace: Identifiable {
         return path.path.hasPrefix(rootPath + "/") ? String(path.path.dropFirst(rootPath.count + 1)) : path.path
     }
 
-    func refreshLocal(_ repo: RepoState) async {
+    /// Reloads the repository's status, branches, actions and remotes.
+    /// Returns whether the card now lists another repository's pull
+    /// requests and issues, and so has emptied its lists for the caller to
+    /// reload.
+    @discardableResult
+    func refreshLocal(_ repo: RepoState) async -> Bool {
         await loadActions(repo)
         // Read on every refresh, so a remote added or removed shows, as does
         // a remote chosen meanwhile in another tab listing the repository.
         let remotes = await repo.git.gitHubRemotes()
+        var switched = false
         if !Task.isCancelled {
             repo.remotes = remotes
-            show(GitHubRemote.shown(among: remotes, chosen: RemoteChoices.shared.chosen(for: repo.git.path)),
-                 in: repo)
+            switched = show(GitHubRemote.shown(among: remotes, chosen: RemoteChoices.shared.chosen(for: repo.git.path)),
+                            in: repo)
         }
         let status = await repo.git.status()
         let branches = await repo.git.branches()
         // A git that was terminated reports an empty status.
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return switched }
         repo.status = status
         if let branches { repo.branches = branches }
+        return switched
     }
 
     /// Makes `remote` the one the card lists. Another repository on GitHub
-    /// empties the lists, which are the last one's, for the reload to come
-    /// to fill.
-    private func show(_ remote: GitHubRemote?, in repo: RepoState) {
-        guard remote != repo.remote else { return }
+    /// empties the lists, which are the last one's, and returns true: the
+    /// caller is to reload them.
+    @discardableResult
+    private func show(_ remote: GitHubRemote?, in repo: RepoState) -> Bool {
+        guard remote != repo.remote else { return false }
         let changed = remote?.repo != repo.github
         repo.remote = remote
-        guard changed else { return }
+        guard changed else { return false }
         repo.pullRequests = []
         repo.mergedPullRequests = []
         repo.issues = []
@@ -701,6 +709,7 @@ final class Workspace: Identifiable {
         repo.extrasError = nil
         repo.prsLoaded = false
         repo.issuesLoaded = false
+        return true
     }
 
     /// Reads the actions in the repository's `ghuppy.yaml` again. A file that
@@ -775,13 +784,13 @@ final class Workspace: Identifiable {
         do {
             // Each loads whether or not the other could: the issues come
             // with the extras, and a tab showing them needs nothing else.
-            let open = try await loading(repo, error: \.prError, prefix: "pull requests: ") {
+            let open = try await loading(repo, github, error: \.prError, prefix: "pull requests: ") {
                 try await PullRequests.open(in: github, cwd: repo.git.path)
             }
             // The pins as they stand now: one taken out meanwhile stays on
             // screen until the next reload, and one put in shows from it on.
             let pinned = RowPins.shared.pinned(in: github)
-            let extras = try await loading(repo, error: \.extrasError) {
+            let extras = try await loading(repo, github, error: \.extrasError) {
                 try await PullRequests.extras(in: github, cwd: repo.git.path, pinned: pinned)
             }
             // Another remote was chosen meanwhile, and its own reload fills the card.
@@ -812,20 +821,20 @@ final class Workspace: Identifiable {
         }
     }
 
-    /// What `load` loaded, nil when it failed, with the failure kept at
-    /// `error` and logged when it starts. A rate limit or a cancellation is
-    /// thrown instead, as it stops the whole reload.
+    /// What `load` loaded from `github`, nil when it failed, with the
+    /// failure kept at `error` and logged when it starts. A rate limit or a
+    /// cancellation is thrown instead, as it stops the whole reload. Once
+    /// another remote is shown, the outcome is no longer the card's, and
+    /// leaves `error` as that remote's own reload set it.
     private func loading<Value>(
-        _ repo: RepoState, error: ReferenceWritableKeyPath<RepoState, String?>, prefix: String = "",
-        _ load: () async throws -> Value
+        _ repo: RepoState, _ github: GitHubRepo, error: ReferenceWritableKeyPath<RepoState, String?>,
+        prefix: String = "", _ load: () async throws -> Value
     ) async throws -> Value? {
-        let github = repo.github
         do {
             let value = try await load()
             if repo.github == github { repo[keyPath: error] = nil }
             return value
         } catch let failure where !(failure is RateLimitError || failure is CancellationError) {
-            // A failure for a remote no longer shown isn't the card's.
             guard repo.github == github else { return nil }
             if repo[keyPath: error] != failure.localizedDescription {
                 append(repo.name, prefix + failure.localizedDescription, isError: true)
@@ -982,7 +991,7 @@ final class Workspace: Identifiable {
     }
 
     private func switchBranch(of repo: RepoState, to target: BranchSwitch.Target) async {
-        await perform("Switching…", on: repo) {
+        let switched = await perform("Switching…", on: repo) {
             let outcome = try await BranchSwitch(repo: repo.git).run(to: target, log: self.logger(for: repo))
             let pulled = outcome.pulled > 0 ? "pulled \(GitRepo.commits(outcome.pulled))" : nil
             if outcome.switched {
@@ -992,12 +1001,17 @@ final class Workspace: Identifiable {
         }
         // A new local branch counts.
         if !Task.isCancelled, let counts = await repo.git.refCounts() { repo.refCounts = counts }
+        // The remotes read along the way may show another repository, with
+        // its lists emptied: a cleanup reloads them anyway, a switch doesn't.
+        if switched, !Task.isCancelled { await refreshPRs(repo) }
     }
 
-    /// Runs `body`, which returns the text to show when it succeeds.
+    /// Runs `body`, which returns the text to show when it succeeds, then
+    /// reloads the repository's status. Returns what `refreshLocal` does.
+    @discardableResult
     private func perform(_ activity: String, on repo: RepoState,
-                         _ body: () async throws -> String) async {
-        guard repo.activity == nil else { return }
+                         _ body: () async throws -> String) async -> Bool {
+        guard repo.activity == nil else { return false }
         repo.activity = activity
         defer { repo.activity = nil }
         do {
@@ -1009,7 +1023,7 @@ final class Workspace: Identifiable {
             repo.result = (error.localizedDescription, true)
             append(repo.name, error.localizedDescription, isError: true)
         }
-        await refreshLocal(repo)
+        return await refreshLocal(repo)
     }
 
     // MARK: Helpers
