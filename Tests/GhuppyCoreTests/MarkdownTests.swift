@@ -9,36 +9,39 @@ struct MarkdownTreeTests {
         }
     }
 
-    @Test func eachFolderListsItsFilesThenItsFolders() {
-        #expect(rows("b.md", "docs/z.md", "a.md", "app/guide.md", "docs/a.md") == [
-            "a.md",
-            "b.md",
+    @Test func eachFolderListsItsFoldersThenItsFiles() {
+        #expect(rows("b.md", "docs/z.md", "a.md", "app/guide.md", "docs/a.md", "docs/api/x.md") == [
             "app/",
             "  guide.md",
             "docs/",
+            "  api/",
+            "    x.md",
             "  a.md",
             "  z.md",
+            "a.md",
+            "b.md",
         ])
     }
 
-    @Test func aReadmeComesFirstInItsFolder() {
-        #expect(rows("CHANGELOG.md", "AGENTS.md", "README.md", "docs/adr.md", "docs/readme.markdown") == [
-            "README.md",
+    @Test func aReadmeSortsByNameLikeAnyOtherFile() {
+        #expect(rows("CHANGELOG.md", "AGENTS.md", "README.md", "TODO.md", "docs/adr.md", "docs/readme.markdown") == [
+            "docs/",
+            "  adr.md",
+            "  readme.markdown",
             "AGENTS.md",
             "CHANGELOG.md",
-            "docs/",
-            "  readme.markdown",
-            "  adr.md",
+            "README.md",
+            "TODO.md",
         ])
     }
 
     @Test func aFolderHoldingOnlyAFolderSharesItsRow() {
         #expect(rows("app/docs/adr/one.md", "app/docs/adr/two.md", "app/README.md", "lib/Sources/Lib/Notes.md") == [
             "app/",
-            "  README.md",
             "  docs/adr/",
             "    one.md",
             "    two.md",
+            "  README.md",
             "lib/Sources/Lib/",
             "  Notes.md",
         ])
@@ -213,8 +216,8 @@ struct MarkdownTreeCollapseTests {
 
     @Test func aClosedFolderHidesAllItHolds() {
         // Not the folder beside it whose name starts the same.
-        #expect(visible("app") == ["README.md", "app/", "app-notes/", "app-notes/todo.md"])
-        #expect(visible("app/docs") == ["README.md", "app/", "app/README.md", "app/docs/", "app-notes/", "app-notes/todo.md"])
+        #expect(visible("app") == ["app/", "app-notes/", "app-notes/todo.md", "README.md"])
+        #expect(visible("app/docs") == ["app/", "app/docs/", "app/README.md", "app-notes/", "app-notes/todo.md", "README.md"])
     }
 
     @Test func aFolderClosedInsideAClosedOneIsHiddenWithIt() {

@@ -135,7 +135,7 @@ public enum MarkdownTree {
     }
 
     /// The rows for `paths`, relative paths of files: in each folder its
-    /// files, its README first, then its folders, each by name.
+    /// folders, then its files, each by name.
     public static func rows(for paths: [String]) -> [Row] {
         let top = Node()
         for path in paths {
@@ -171,15 +171,8 @@ public enum MarkdownTree {
     }
 
     private static func append(_ node: Node, at path: String, depth: Int, to rows: inout [Row]) {
-        let files = node.files.sorted { lhs, rhs in
-            let readme = (MarkdownFiles.isReadme(lhs), MarkdownFiles.isReadme(rhs))
-            return readme.0 != readme.1 ? readme.0 : lhs.localizedStandardCompare(rhs) == .orderedAscending
-        }
-        for file in files {
-            rows.append(Row(kind: .file, path: path + file, name: file, depth: depth))
-        }
-        let folders = node.folders.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-        for name in folders {
+        let byName: (String, String) -> Bool = { $0.localizedStandardCompare($1) == .orderedAscending }
+        for name in node.folders.keys.sorted(by: byName) {
             var name = name
             var folder = node.folders[name]!
             while folder.files.isEmpty, folder.folders.count == 1, let (inner, next) = folder.folders.first {
@@ -188,6 +181,9 @@ public enum MarkdownTree {
             }
             rows.append(Row(kind: .folder, path: path + name, name: name, depth: depth))
             append(folder, at: path + name + "/", depth: depth + 1, to: &rows)
+        }
+        for file in node.files.sorted(by: byName) {
+            rows.append(Row(kind: .file, path: path + file, name: file, depth: depth))
         }
     }
 }
