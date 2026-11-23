@@ -9,7 +9,8 @@ merge, then the other open ones, then the ones in the merge queue, the next to
 merge last, then the pinned ones merged or closed and the last 3 others
 merged, the last merged first. Or, switched to issues, its open issues, the
 newest first, then the pinned ones closed and the last 3 others closed, the
-last closed first.
+last closed first. Or, switched to files, every Markdown file under it, to
+read. See [Files](#files).
 
 - **Ghuppy!** — `git fetch --prune`, then delete local branches whose work has
   actually landed and the worktrees left behind with them, then a
@@ -28,8 +29,8 @@ last closed first.
   of its own. See [Repository actions](#repository-actions).
 
 ⌘/ lists every action and shortcut, how labels are decided, and how to set up
-repository actions. ⌘I switches between pull requests and issues. ⌘U opens
-the author select. ⌘L shows or hides the log,
+repository actions. ⌘1, ⌘2 and ⌘3 switch between pull requests, issues and
+files. ⌘U opens the author select. ⌘L shows or hides the log,
 and ⌘K clears the log tab on screen. ⌃C stops everything running in
 every tab. A cleanup stopped this way deletes nothing more, and what it had
 already deleted stays deleted.
@@ -116,8 +117,8 @@ saved, and shared by every checkout of the repository on GitHub, in any tab.
 The pinned ones are looked up in the request that loads the issues, so they
 take no request of their own, and a pinned one deleted since is left out.
 
-The **switch beside the author select** (⌘I) shows each repository's issues
-in place of its pull requests: up to 100 open ones, the newest first, then the
+The **switch beside the author select** shows each repository's pull
+requests (⌘1), or its issues (⌘2) in their place: up to 100 open ones, the newest first, then the
 pinned ones closed and the last 3 others closed, labelled **Open**, **Closed**, **Not planned** or **Duplicate**.
 A repository with issues turned off says so. Both load on every refresh,
 in the same request as the pull requests' merge queue, so switching shows
@@ -132,6 +133,30 @@ The last 3 merged or closed are the repository's, so fewer than 3 of them may
 be that person's, and the pinned ones show only when they're that person's. It only changes what is shown: Ghuppy ’em all! acts as
 before, and the select stays usable while one runs. Each tab remembers its own
 choice, across launches too, until its working directory changes.
+
+## Files
+
+The third place on the switch beside the author select (⌘3) shows the
+working directory's Markdown files in place of the repositories: every
+folder holding one, all of them open, down the side, and the file chosen
+there beside them. Clicking a folder closes it, and clicking it again opens
+it; folders closed stay closed until the working directory changes or
+Ghuppy quits. The file is rendered as GitHub renders it, light or dark with the
+system. Until one is chosen, it's the README at the top of the working
+directory, or else the one nearest the top. Each tab remembers its own
+choice, across launches too, until its working directory changes. The author
+select has nothing to narrow there, and is off.
+
+Inside a repository the files are the ones git lists, so whatever it
+ignores, such as build output, stays out. Outside them, hidden folders and
+`node_modules` are skipped. The list keeps up with the disk, and the file on
+screen is read again whenever it's saved. Refresh (⌘R) reads both again.
+
+A link to another Markdown file under the working directory opens it there,
+and a link to a heading scrolls to it. A web link opens in the browser, and a
+link to any other file shows it in Finder. Images under the working
+directory show, and so do ones on the web. Nothing in a file runs:
+JavaScript is off.
 
 ## Repository actions
 

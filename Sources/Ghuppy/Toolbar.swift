@@ -53,12 +53,14 @@ struct WorkspaceToolbar: ToolbarContent {
         // Holds the items to the right, where the title would otherwise.
         ToolbarItem(placement: .primaryAction) { Spacer() }
         ToolbarItem(placement: .primaryAction) {
-            ListingSwitch(showsIssues: $workspace.showsIssues)
+            ListingSwitch(listing: $workspace.listing)
         }
         ToolbarItem(placement: .primaryAction) {
             AuthorMenu(workspace: workspace, requests: authorMenuRequests)
                 .modifier(HoverHighlight(pressed: false))
                 .tooltip("Author", shortcut: "⌘U")
+                // There is nobody's to narrow the files to.
+                .disabled(workspace.listing == .files)
         }
         ToolbarItem(placement: .primaryAction) {
             ToolbarToggle(isOn: $workspace.pinnedOnly, symbol: "pin", name: "Pinned Only", shortcut: "⌘P")
@@ -128,31 +130,32 @@ private struct ToolbarToggle: View {
     }
 }
 
-/// Switches the cards between pull requests and issues: the tab bar's look
-/// in small, the one shown raised. Never disabled, as the author select
+/// Switches the tab between pull requests, issues and files: the tab bar's
+/// look in small, the one shown raised. Never disabled, as the author select
 /// isn't: it only changes what is shown.
 private struct ListingSwitch: View {
-    @Binding var showsIssues: Bool
+    @Binding var listing: Listing
 
     var body: some View {
         HStack(spacing: 8) {
             HStack(spacing: 2) {
-                segment("arrow.triangle.pull", name: "Pull Requests", shown: !showsIssues) { showsIssues = false }
-                segment("smallcircle.filled.circle", name: "Issues", shown: showsIssues) { showsIssues = true }
+                segment(.pullRequests)
+                segment(.issues)
+                segment(.files)
             }
             .padding(2)
             .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
-            Text("⌘I")
+            Text("⌘1–3")
                 .font(.title3)
                 .foregroundStyle(Color.muted)
         }
         .padding(.horizontal, 6)
     }
 
-    private func segment(_ symbol: String, name: String, shown: Bool,
-                         action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
+    private func segment(_ choice: Listing) -> some View {
+        let shown = listing == choice
+        return Button { listing = choice } label: {
+            Image(systemName: choice.symbol)
                 .imageScale(.large)
                 .foregroundStyle(shown ? Color.primary : Color.muted)
                 .frame(width: 30, height: 22)
@@ -166,10 +169,39 @@ private struct ListingSwitch: View {
                 .contentShape(RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(name)
+        .accessibilityLabel(choice.name)
         .accessibilityAddTraits(shown ? .isSelected : [])
-        .tooltip(name, shortcut: "⌘I")
+        .tooltip(choice.name, shortcut: choice.shortcut)
     }
+}
+
+extension Listing {
+    var name: String {
+        switch self {
+        case .pullRequests: "Pull Requests"
+        case .issues: "Issues"
+        case .files: "Files"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .pullRequests: "arrow.triangle.pull"
+        case .issues: "smallcircle.filled.circle"
+        case .files: "doc.text"
+        }
+    }
+
+    /// ⌘1 to ⌘3, in the order the switch shows them, as Finder's views go.
+    var key: KeyEquivalent {
+        switch self {
+        case .pullRequests: "1"
+        case .issues: "2"
+        case .files: "3"
+        }
+    }
+
+    var shortcut: String { "⌘" + String(key.character) }
 }
 
 /// Picks whose pull requests or issues to show. A menu rather than a plain Picker,
@@ -181,6 +213,7 @@ private struct AuthorMenu: View {
     /// Goes up each time the menu is asked to open from the keyboard.
     let requests: Int
     @State private var anchor = PassthroughView()
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         HStack(spacing: 8) {
@@ -211,9 +244,10 @@ private struct AuthorMenu: View {
         } label: {
             HStack(spacing: 6) {
                 Avatars.shared.image(for: workspace.authorFilter)
+                    .opacity(isEnabled ? 1 : 0.4)
                 Text(workspace.authorFilter ?? "Everyone")
                     .font(.title3)
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(isEnabled ? Color.primary : Color.muted)
             }
         }
         .menuStyle(.borderlessButton)

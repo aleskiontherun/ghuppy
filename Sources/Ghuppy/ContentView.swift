@@ -38,10 +38,10 @@ struct WorkspaceView: View {
             GeometryReader { proxy in
                 let heights = LogPane.heights(sharing: proxy.size.height)
                 VStack(spacing: 0) {
-                    repositoryList
+                    content
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     if showLog {
-                        LogResizeHandle(height: $logHeight, range: heights)
+                        ResizeHandle(length: $logHeight, range: heights)
                         LogPane()
                             .frame(height: logHeight.clamped(to: heights))
                     }
@@ -149,7 +149,7 @@ struct WorkspaceView: View {
     }
 
     @ViewBuilder
-    private var repositoryList: some View {
+    private var content: some View {
         if !model.missingTools.isEmpty {
             ContentUnavailableView(
                 "Missing \(model.missingTools.joined(separator: " and "))",
@@ -164,6 +164,8 @@ struct WorkspaceView: View {
             } actions: {
                 Button("Select…") { model.chooseRoot() }
             }
+        } else if model.listing == .files {
+            FilesView()
         } else if model.repos.isEmpty && !model.isRefreshing {
             ContentUnavailableView("No repositories", systemImage: "tray",
                                    description: Text("No git repositories were found under this folder."))

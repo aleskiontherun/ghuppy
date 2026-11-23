@@ -144,11 +144,15 @@ private struct LogTab<Content: View>: View {
     }
 }
 
-/// The divider above the log, draggable to resize it. A `VSplitView` would
-/// lose its position on every tab switch, since each tab gets a fresh view.
-struct LogResizeHandle: View {
-    @Binding var height: Double
+/// A divider between two panes, draggable to resize the one it belongs to:
+/// the log, below a horizontal one, or the Files view's side pane, left of
+/// a vertical one. A split view would lose its position on every tab
+/// switch, since each tab gets a fresh view.
+struct ResizeHandle: View {
+    /// The pane's height, or its width beside a vertical divider.
+    @Binding var length: Double
     let range: ClosedRange<Double>
+    var axis = Axis.vertical
 
     @State private var dragStart: Double?
     @State private var hovering = false
@@ -159,7 +163,7 @@ struct LogResizeHandle: View {
         Divider()
             .overlay {
                 Color.clear
-                    .frame(height: 9)
+                    .frame(width: axis == .horizontal ? 9 : nil, height: axis == .vertical ? 9 : nil)
                     .contentShape(Rectangle())
                     .onHover { hovering = $0 }
                     .gesture(drag)
@@ -167,7 +171,11 @@ struct LogResizeHandle: View {
             // Above the views either side, which the grab area overlaps.
             .zIndex(1)
             .onChange(of: showsResizeCursor) { _, shows in
-                if shows { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+                if shows {
+                    (axis == .vertical ? NSCursor.resizeUpDown : NSCursor.resizeLeftRight).push()
+                } else {
+                    NSCursor.pop()
+                }
             }
             .onDisappear {
                 if showsResizeCursor { NSCursor.pop() }
@@ -178,9 +186,11 @@ struct LogResizeHandle: View {
     private var drag: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
-                let start = dragStart ?? height.clamped(to: range)
+                let start = dragStart ?? length.clamped(to: range)
                 dragStart = start
-                height = (start - value.translation.height).clamped(to: range)
+                // The log is above its divider, the side pane left of its own.
+                let moved = axis == .vertical ? -value.translation.height : value.translation.width
+                length = (start + moved).clamped(to: range)
             }
             .onEnded { _ in dragStart = nil }
     }

@@ -109,6 +109,12 @@ final class RepoState: Identifiable {
     }
 }
 
+/// What a tab shows: each repository's pull requests or issues, or the
+/// working directory's Markdown files.
+enum Listing: String, CaseIterable {
+    case pullRequests, issues, files
+}
+
 /// One tab: a working directory and the repositories under it.
 @MainActor @Observable
 final class Workspace: Identifiable {
@@ -168,10 +174,11 @@ final class Workspace: Identifiable {
         didSet { onSavedStateChange?() }
     }
     var dryRun = false
-    /// Whether the cards list issues in place of pull requests.
-    var showsIssues: Bool {
+    var listing: Listing {
         didSet { onSavedStateChange?() }
     }
+    /// Whether the cards list issues in place of pull requests.
+    var showsIssues: Bool { listing == .issues }
     /// The author whose pull requests or issues are listed, nil for everyone's.
     var authorFilter: String? {
         didSet { onSavedStateChange?() }
@@ -223,17 +230,52 @@ final class Workspace: Identifiable {
     @ObservationIgnored private var lastRefresh = Date.distantPast
     @ObservationIgnored var onSavedStateChange: (() -> Void)?
 
+    /// The Markdown files under the working directory, relative to it, nil
+    /// until first listed, and the side pane's rows for them.
+    private(set) var markdownFiles: [String]?
+    private(set) var markdownRows: [MarkdownTree.Row] = []
+    /// The side pane's folders that have been closed, by path. They all
+    /// start open.
+    var collapsedFolders: Set<String> = []
+    /// The side pane's rows, without what the closed folders hold.
+    var visibleMarkdownRows: [MarkdownTree.Row] {
+        MarkdownTree.visible(markdownRows, collapsed: collapsedFolders)
+    }
+    /// The file chosen in the Files view, relative to the working directory,
+    /// nil until one is.
+    var chosenFile: String? {
+        didSet {
+            onSavedStateChange?()
+            checkShownFile()
+        }
+    }
+    /// The file the Files view shows: the one chosen, else the README.
+    var shownFile: String? {
+        chosenFile ?? markdownFiles.flatMap(MarkdownFiles.defaultFile(in:))
+    }
+    /// Goes up each time the file shown changes on disk, or Refresh asks for
+    /// it again, for the view to read it again.
+    private(set) var shownFileRevision = 0
+    /// The file shown when it was last looked at, and when it was modified then.
+    @ObservationIgnored private var shownFileSeen: (path: String, modified: Date?)?
+    @ObservationIgnored private var fileListing: Task<Void, Never>?
+    @ObservationIgnored private var fileListingID: UUID?
+    /// Whether the files are known to be behind the disk.
+    @ObservationIgnored private var filesStale = false
+
     var title: String { root?.lastPathComponent ?? "New Tab" }
 
     var missingTools: [String] {
         [("git", Shell.gitPath), ("gh", Shell.ghPath)].compactMap { $0.1 == nil ? $0.0 : nil }
     }
 
-    init(root: URL? = nil, pinnedOnly: Bool = false, showsIssues: Bool = false, authorFilter: String? = nil) {
+    init(root: URL? = nil, pinnedOnly: Bool = false, listing: Listing = .pullRequests,
+         authorFilter: String? = nil, chosenFile: String? = nil) {
         self.root = root
         self.pinnedOnly = pinnedOnly
-        self.showsIssues = showsIssues
+        self.listing = listing
         self.authorFilter = authorFilter
+        self.chosenFile = chosenFile
     }
 
     /// What the tab shows, to save for the next launch: nil without a root.
@@ -269,6 +311,11 @@ final class Workspace: Identifiable {
         root = url
         repos = []
         authorFilter = nil
+        stopListingFiles()
+        markdownFiles = nil
+        markdownRows = []
+        collapsedFolders = []
+        chosenFile = nil
         directorySize = nil
         freeSpace = nil
         refresh()
@@ -285,6 +332,7 @@ final class Workspace: Identifiable {
         guard root != nil else { return }
         stopped = false
         lastRefresh = .now
+        if listing == .files { shownFileRevision += 1 }
         // It discovers anyway, and mustn't find a discovery in its way.
         stopRediscovering()
         refreshSlot.start { [self] in
@@ -399,6 +447,7 @@ final class Workspace: Identifiable {
                 self?.diskChanged()
                 self?.treeChanged(paths)
                 self?.reloadActions(changedIn: paths)
+                self?.filesChanged(paths)
             }
         }.map { (root, $0) }
     }
@@ -459,6 +508,69 @@ final class Workspace: Identifiable {
                 try? await Task.sleep(for: .seconds(5))
             }
         }
+    }
+
+    // MARK: Files
+
+    /// Lists the Markdown files under the working directory again, in the
+    /// repositories the tab lists and outside them. While a listing runs,
+    /// another is left to follow it, a few seconds after it ends, so a tree
+    /// that keeps changing is listed at most every few seconds.
+    func listFiles() {
+        guard root != nil else { return }
+        filesStale = true
+        guard fileListing == nil else { return }
+        let id = UUID()
+        fileListingID = id
+        fileListing = Task {
+            defer { if fileListingID == id { fileListing = nil } }
+            while filesStale, !Task.isCancelled, let root {
+                filesStale = false
+                let files = await MarkdownFiles.list(under: root, repositories: repos.map(\.git.path))
+                guard !Task.isCancelled, root == self.root else { return }
+                if files != markdownFiles {
+                    markdownFiles = files
+                    markdownRows = MarkdownTree.rows(for: files)
+                }
+                // A chosen file that has gone gives way to the README.
+                if let chosenFile, !files.contains(chosenFile),
+                   !FileManager.default.fileExists(atPath: root.appending(path: chosenFile).path) {
+                    self.chosenFile = nil
+                }
+                checkShownFile()
+                guard filesStale else { break }
+                try? await Task.sleep(for: .seconds(3))
+            }
+        }
+    }
+
+    private func stopListingFiles() {
+        fileListing?.cancel()
+        fileListing = nil
+        fileListingID = nil
+        filesStale = false
+    }
+
+    /// Something under the working directory changed while the tab shows
+    /// its files: the file shown may have been edited, and a file added or
+    /// removed, unless the change was inside a `.git` or a folder never
+    /// looked in.
+    private func filesChanged(_ paths: [String]) {
+        guard listing == .files, markdownFiles != nil else { return }
+        checkShownFile()
+        if MarkdownFiles.couldChange(paths: paths) { listFiles() }
+    }
+
+    /// Has the view read the file shown again if it was modified since it
+    /// was last looked at.
+    private func checkShownFile() {
+        guard let root, let path = shownFile else { return }
+        let modified = try? root.appending(path: path)
+            .resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        if let seen = shownFileSeen, seen.path == path, seen.modified != modified {
+            shownFileRevision += 1
+        }
+        shownFileSeen = (path, modified)
     }
 
     /// Stops the discovery the tree's changes started, and forgets them,
@@ -536,6 +648,7 @@ final class Workspace: Identifiable {
             }
         }
         repos = updated
+        if listing == .files { listFiles() }
         return true
     }
 
@@ -771,6 +884,7 @@ final class Workspace: Identifiable {
         measurement?.cancel()
         remeasuring?.cancel()
         stopRediscovering()
+        stopListingFiles()
         stopped = true
         append(nil, "Stopped")
     }
