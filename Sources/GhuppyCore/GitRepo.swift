@@ -51,6 +51,65 @@ public struct GitHubRepo: Sendable, Hashable, Codable {
     }
 }
 
+/// A remote of a checkout that is a repository on GitHub: a fork's
+/// `origin`, say, and the `upstream` it was forked from.
+public struct GitHubRemote: Sendable, Hashable, Codable {
+    public let name: String
+    public let repo: GitHubRepo
+    /// Whether `gh repo set-default` made it the one gh works on.
+    public let isDefault: Bool
+
+    public init(name: String, repo: GitHubRepo, isDefault: Bool = false) {
+        self.name = name
+        self.repo = repo
+        self.isDefault = isDefault
+    }
+
+    /// The GitHub remotes in what `git remote -v` printed, ranked as gh
+    /// ranks them, `upstream` first, then `github`, then `origin`, then the
+    /// others by name. `resolved` is what `git config --get-regexp` printed
+    /// for the `remote.*.gh-resolved` keys, where `gh repo set-default`
+    /// writes `base`. A remote's fetch URL is the one that counts.
+    public static func parse(remotes: String, resolved: String = "") -> [GitHubRemote] {
+        var defaults: Set<String> = []
+        for line in resolved.split(separator: "\n") {
+            let parts = line.split(separator: " ", maxSplits: 1)
+            guard parts.count == 2, parts[1].trimmingCharacters(in: .whitespaces) == "base",
+                  parts[0].hasPrefix("remote."), parts[0].hasSuffix(".gh-resolved") else { continue }
+            defaults.insert(String(parts[0].dropFirst("remote.".count).dropLast(".gh-resolved".count)))
+        }
+        var seen: Set<String> = []
+        var found: [GitHubRemote] = []
+        for line in remotes.split(separator: "\n") {
+            let parts = line.split(separator: "\t", maxSplits: 1)
+            guard parts.count == 2, parts[1].hasSuffix(" (fetch)") else { continue }
+            let name = String(parts[0])
+            guard !seen.contains(name),
+                  let repo = GitHubRepo(remoteURL: String(parts[1].dropLast(" (fetch)".count))) else { continue }
+            seen.insert(name)
+            found.append(GitHubRemote(name: name, repo: repo, isDefault: defaults.contains(name)))
+        }
+        return found.sorted { a, b in
+            let (rankA, rankB) = (rank(a.name), rank(b.name))
+            return rankA != rankB ? rankA < rankB : a.name.localizedStandardCompare(b.name) == .orderedAscending
+        }
+    }
+
+    /// gh's own order for the remotes it might work on: `upstream`, by
+    /// convention the repository a fork was made from, ahead of `origin`.
+    private static func rank(_ name: String) -> Int {
+        ["upstream", "github", "origin"].firstIndex(of: name) ?? 3
+    }
+
+    /// The remote whose pull requests and issues show: the one `chosen`,
+    /// while it's still there, else the one gh would work on: the one
+    /// `gh repo set-default` picked, else the first of `remotes`, ranked as
+    /// `parse` ranks them. A fork's `upstream` comes before its `origin`.
+    public static func shown(among remotes: [GitHubRemote], chosen: String?) -> GitHubRemote? {
+        remotes.first { $0.name == chosen } ?? remotes.first(where: \.isDefault) ?? remotes.first
+    }
+}
+
 /// What `git status` says about a checkout, for the repository header.
 public struct LocalStatus: Sendable, Equatable, Codable {
     public var branch: String?
@@ -122,6 +181,17 @@ public struct GitRepo: Sendable, Hashable {
         let result = await git("remote", "get-url", "origin")
         guard result.ok else { return nil }
         return GitHubRepo(remoteURL: result.out)
+    }
+
+    /// The checkout's remotes on GitHub, ranked as `GitHubRemote.parse`
+    /// ranks them. `git remote -v` prints the URLs with any `insteadOf`
+    /// rewriting done.
+    public func gitHubRemotes() async -> [GitHubRemote] {
+        let remotes = await git("remote", "-v")
+        guard remotes.ok else { return [] }
+        // No key matching is a failure, and leaves nothing marked.
+        let resolved = await git("config", "--get-regexp", #"^remote\..*\.gh-resolved$"#)
+        return GitHubRemote.parse(remotes: remotes.stdout, resolved: resolved.ok ? resolved.stdout : "")
     }
 
     public func defaultBranch() async -> String {

@@ -22,7 +22,11 @@ struct LogLine: Identifiable {
 final class RepoState: Identifiable {
     let git: GitRepo
     let name: String
-    var github: GitHubRepo?
+    /// The repository's remotes on GitHub, as last read.
+    var remotes: [GitHubRemote] = []
+    /// The remote whose pull requests and issues the card lists.
+    var remote: GitHubRemote?
+    var github: GitHubRepo? { remote?.repo }
     var status = LocalStatus()
     /// The branches the branch menu offers, nil until first listed.
     var branches: Branches?
@@ -43,7 +47,10 @@ final class RepoState: Identifiable {
     /// Why the merge queue, merged pull requests and issues last failed to
     /// load, nil once they load again.
     var extrasError: String?
-    var loadingPRs = false
+    /// How many reloads of the pull requests and issues are under way: one
+    /// for the remote that was shown can still be finishing after a switch.
+    var prLoads = 0
+    var loadingPRs: Bool { prLoads > 0 }
     /// How many refreshes are reloading the repository right now: the tab's
     /// and its own. A cleanup's reload isn't counted.
     var refreshes = 0
@@ -83,7 +90,8 @@ final class RepoState: Identifiable {
     init(restoring saved: WorkspaceSnapshot.Repo) {
         git = GitRepo(path: saved.path)
         name = saved.name
-        github = saved.github
+        remotes = saved.remotes
+        remote = saved.remote
         status = saved.status
         branches = saved.branches
         pullRequests = saved.pullRequests
@@ -101,7 +109,7 @@ final class RepoState: Identifiable {
 
     var snapshot: WorkspaceSnapshot.Repo {
         WorkspaceSnapshot.Repo(
-            path: git.path, name: name, github: github, status: status, branches: branches,
+            path: git.path, name: name, remotes: remotes, remote: remote, status: status, branches: branches,
             pullRequests: pullRequests, mergedPullRequests: mergedPullRequests, prsLoaded: prsLoaded,
             issues: issues, closedIssues: closedIssues, issuesEnabled: issuesEnabled, issuesLoaded: issuesLoaded,
             result: result.map { WorkspaceSnapshot.Result(text: $0.text, isError: $0.isError) },
@@ -660,10 +668,13 @@ final class Workspace: Identifiable {
 
     func refreshLocal(_ repo: RepoState) async {
         await loadActions(repo)
-        // The remote is read once a run: the last run's may have changed since.
-        if repo.github == nil || repo.restored {
-            let github = await repo.git.gitHubRepo()
-            if !Task.isCancelled { repo.github = github }
+        // Read on every refresh, so a remote added or removed shows, as does
+        // a remote chosen meanwhile in another tab listing the repository.
+        let remotes = await repo.git.gitHubRemotes()
+        if !Task.isCancelled {
+            repo.remotes = remotes
+            show(GitHubRemote.shown(among: remotes, chosen: RemoteChoices.shared.chosen(for: repo.git.path)),
+                 in: repo)
         }
         let status = await repo.git.status()
         let branches = await repo.git.branches()
@@ -671,6 +682,25 @@ final class Workspace: Identifiable {
         guard !Task.isCancelled else { return }
         repo.status = status
         if let branches { repo.branches = branches }
+    }
+
+    /// Makes `remote` the one the card lists. Another repository on GitHub
+    /// empties the lists, which are the last one's, for the reload to come
+    /// to fill.
+    private func show(_ remote: GitHubRemote?, in repo: RepoState) {
+        guard remote != repo.remote else { return }
+        let changed = remote?.repo != repo.github
+        repo.remote = remote
+        guard changed else { return }
+        repo.pullRequests = []
+        repo.mergedPullRequests = []
+        repo.issues = []
+        repo.closedIssues = []
+        repo.issuesEnabled = true
+        repo.prError = nil
+        repo.extrasError = nil
+        repo.prsLoaded = false
+        repo.issuesLoaded = false
     }
 
     /// Reads the actions in the repository's `ghuppy.yaml` again. A file that
@@ -738,8 +768,8 @@ final class Workspace: Identifiable {
             return
         }
         let quiet = look != nil
-        if !quiet { repo.loadingPRs = true }
-        defer { if !quiet { repo.loadingPRs = false } }
+        if !quiet { repo.prLoads += 1 }
+        defer { if !quiet { repo.prLoads -= 1 } }
         // Whether it changed doesn't matter: this reload is what's shown.
         let seen = if let look { look } else { try? await PullRequestChanges.shared.look(github, cwd: repo.git.path) }
         do {
@@ -754,6 +784,8 @@ final class Workspace: Identifiable {
             let extras = try await loading(repo, error: \.extrasError) {
                 try await PullRequests.extras(in: github, cwd: repo.git.path, pinned: pinned)
             }
+            // Another remote was chosen meanwhile, and its own reload fills the card.
+            guard repo.github == github else { return }
             if let extras {
                 repo.mergedPullRequests = extras.merged
                 repo.issues = extras.openIssues
@@ -787,11 +819,14 @@ final class Workspace: Identifiable {
         _ repo: RepoState, error: ReferenceWritableKeyPath<RepoState, String?>, prefix: String = "",
         _ load: () async throws -> Value
     ) async throws -> Value? {
+        let github = repo.github
         do {
             let value = try await load()
-            repo[keyPath: error] = nil
+            if repo.github == github { repo[keyPath: error] = nil }
             return value
         } catch let failure where !(failure is RateLimitError || failure is CancellationError) {
+            // A failure for a remote no longer shown isn't the card's.
+            guard repo.github == github else { return nil }
             if repo[keyPath: error] != failure.localizedDescription {
                 append(repo.name, prefix + failure.localizedDescription, isError: true)
             }
@@ -808,6 +843,18 @@ final class Workspace: Identifiable {
     func startRefresh(of repo: RepoState) {
         guard !repo.isRefreshing, repo.activity == nil else { return }
         track { await self.reload(repo) }
+    }
+
+    /// Lists the pull requests and issues of another of the repository's
+    /// remotes, from now on and in every tab, loading them at once. Like the
+    /// author select, it only changes what is shown, so it can be used while
+    /// the repository is being cleaned up.
+    func choose(_ remote: GitHubRemote, for repo: RepoState) {
+        RemoteChoices.shared.choose(remote.name, for: repo.git.path)
+        guard remote != repo.remote else { return }
+        let changed = remote.repo != repo.github
+        show(remote, in: repo)
+        if changed { track { await self.refreshPRs(repo) } }
     }
 
     /// Runs one of a repository's actions, in its log tab, which comes on

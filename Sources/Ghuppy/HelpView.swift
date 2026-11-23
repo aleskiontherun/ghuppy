@@ -79,6 +79,7 @@ private struct ActionList: View {
             Action(name: "Ghuppy!", description: "Clean up this repository alone"),
             Action(name: "Refresh", description: "Reload this repository alone"),
             Action(name: "Branch", description: "Switch branch, and pull it up to date"),
+            Action(name: "Remote", description: "List another remote’s pull requests and issues"),
             Action(name: "Pin", description: "Keep it at the top of the list"),
             Action(name: "Its actions", description: "Run what its ghuppy.yaml offers"),
         ]),

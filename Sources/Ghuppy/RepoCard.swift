@@ -89,6 +89,7 @@ struct RepoCard: View {
                                 .font(.callout)
                         }
                         .tooltip(github.url.absoluteString)
+                        if repo.remotes.count > 1 { remoteMenu }
                     } else {
                         Text("no GitHub remote")
                             .font(.callout)
@@ -162,6 +163,27 @@ struct RepoCard: View {
         .fixedSize()
         .disabled(repo.activity != nil || !model.canAct || repo.branches == nil)
         .tooltip("Switch branch, and pull it up to date")
+    }
+
+    /// The remote whose pull requests and issues are listed, opening a menu
+    /// of the repository's other remotes on GitHub to list instead: a fork's
+    /// `origin` beside the `upstream` it shows at first.
+    private var remoteMenu: some View {
+        Menu {
+            ForEach(repo.remotes, id: \.name) { remote in
+                Toggle("\(remote.name) — \(remote.repo.slug)", isOn: Binding(
+                    get: { remote == repo.remote },
+                    set: { _ in model.choose(remote, for: repo) }
+                ))
+            }
+        } label: {
+            Label(repo.remote?.name ?? "", systemImage: "point.3.connected.trianglepath.dotted")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .tooltip("Show another remote's pull requests and issues")
     }
 
     /// A local branch, ticked when it's checked out. One checked out in
