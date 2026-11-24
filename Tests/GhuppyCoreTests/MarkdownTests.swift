@@ -206,22 +206,32 @@ struct MarkdownTreeCollapseTests {
         "README.md", "app/README.md", "app/docs/adr/one.md", "app/docs/guide.md", "app-notes/todo.md",
     ])
 
-    private func visible(_ collapsed: String...) -> [String] {
-        MarkdownTree.visible(rows, collapsed: Set(collapsed)).map(\.id)
+    private func visible(_ expanded: String...) -> [String] {
+        MarkdownTree.visible(rows, expanded: Set(expanded)).map(\.id)
     }
 
-    @Test func everythingShowsWithNothingClosed() {
-        #expect(visible() == rows.map(\.id))
+    @Test func onlyTheTopShowsWithNothingOpen() {
+        #expect(visible() == ["app/", "app-notes/", "README.md"])
     }
 
-    @Test func aClosedFolderHidesAllItHolds() {
-        // Not the folder beside it whose name starts the same.
-        #expect(visible("app") == ["app/", "app-notes/", "app-notes/todo.md", "README.md"])
-        #expect(visible("app/docs") == ["app/", "app/docs/", "app/README.md", "app-notes/", "app-notes/todo.md", "README.md"])
+    @Test func anOpenFolderShowsWhatItHolds() {
+        // Not what the folder beside it holds, whose name starts the same.
+        #expect(visible("app") == ["app/", "app/docs/", "app/README.md", "app-notes/", "README.md"])
+        #expect(visible("app", "app/docs") == ["app/", "app/docs/", "app/docs/adr/", "app/docs/guide.md",
+                                               "app/README.md", "app-notes/", "README.md"])
     }
 
-    @Test func aFolderClosedInsideAClosedOneIsHiddenWithIt() {
-        #expect(visible("app", "app/docs") == visible("app"))
-        #expect(visible("app/docs/adr") == rows.map(\.id).filter { $0 != "app/docs/adr/one.md" })
+    @Test func aFolderOpenInsideAClosedOneIsHiddenWithIt() {
+        #expect(visible("app/docs", "app/docs/adr") == visible())
+        #expect(visible("app", "app/docs", "app/docs/adr", "app-notes") == rows.map(\.id))
+    }
+
+    @Test func aFileIsReachedThroughEveryFolderItLiesIn() {
+        #expect(MarkdownTree.folders(leadingTo: "README.md") == [])
+        #expect(MarkdownTree.folders(leadingTo: "app/docs/adr/one.md") == ["app", "app/docs", "app/docs/adr"])
+        // A folder the rows show as part of one going on down through it.
+        let chained = MarkdownTree.rows(for: ["app/docs/adr/one.md", "notes.md"])
+        let opened = Set(MarkdownTree.folders(leadingTo: "app/docs/adr/one.md"))
+        #expect(MarkdownTree.visible(chained, expanded: opened).map(\.id) == chained.map(\.id))
     }
 }

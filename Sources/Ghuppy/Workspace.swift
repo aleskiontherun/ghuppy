@@ -242,12 +242,12 @@ final class Workspace: Identifiable {
     /// until first listed, and the side pane's rows for them.
     private(set) var markdownFiles: [String]?
     private(set) var markdownRows: [MarkdownTree.Row] = []
-    /// The side pane's folders that have been closed, by path. They all
-    /// start open.
-    var collapsedFolders: Set<String> = []
+    /// The side pane's folders that are open, by path. They all start
+    /// closed, but for the ones leading to the file shown.
+    var expandedFolders: Set<String> = []
     /// The side pane's rows, without what the closed folders hold.
     var visibleMarkdownRows: [MarkdownTree.Row] {
-        MarkdownTree.visible(markdownRows, collapsed: collapsedFolders)
+        MarkdownTree.visible(markdownRows, expanded: expandedFolders)
     }
     /// The file chosen in the Files view, relative to the working directory,
     /// nil until one is.
@@ -322,7 +322,8 @@ final class Workspace: Identifiable {
         stopListingFiles()
         markdownFiles = nil
         markdownRows = []
-        collapsedFolders = []
+        expandedFolders = []
+        shownFileSeen = nil
         chosenFile = nil
         directorySize = nil
         freeSpace = nil
@@ -570,13 +571,17 @@ final class Workspace: Identifiable {
     }
 
     /// Has the view read the file shown again if it was modified since it
-    /// was last looked at.
+    /// was last looked at, and opens the folders leading to one newly shown.
     private func checkShownFile() {
         guard let root, let path = shownFile else { return }
         let modified = try? root.appending(path: path)
             .resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-        if let seen = shownFileSeen, seen.path == path, seen.modified != modified {
-            shownFileRevision += 1
+        if let seen = shownFileSeen, seen.path == path {
+            if seen.modified != modified { shownFileRevision += 1 }
+        } else {
+            // A file newly shown opens the folders it lies in, once: one
+            // closed over it afterwards stays closed.
+            expandedFolders.formUnion(MarkdownTree.folders(leadingTo: path))
         }
         shownFileSeen = (path, modified)
     }

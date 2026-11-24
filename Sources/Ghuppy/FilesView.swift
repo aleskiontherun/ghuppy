@@ -3,7 +3,7 @@ import GhuppyCore
 import SwiftUI
 
 /// The tab's Markdown files: every folder holding one down the side, each
-/// open until it's closed, and the file chosen, or else the README, beside
+/// closed until it's opened, and the file chosen, or else the README, beside
 /// them.
 struct FilesView: View {
     @Environment(Workspace.self) private var model
@@ -43,7 +43,7 @@ struct FilesView: View {
 }
 
 /// The side pane: each folder's files under it, indented as deep as it
-/// lies. Clicking a folder closes it, or opens it again.
+/// lies. Clicking a folder opens it, or closes it again.
 private struct FileList: View {
     @Environment(Workspace.self) private var model
 
@@ -73,14 +73,14 @@ private struct FileRow: View {
     @Environment(Workspace.self) private var model
     let row: MarkdownTree.Row
 
-    private var collapsed: Bool { model.collapsedFolders.contains(row.path) }
+    private var collapsed: Bool { !model.expandedFolders.contains(row.path) }
 
     private func toggle() {
         withAnimation(.snappy(duration: 0.2)) {
             if collapsed {
-                model.collapsedFolders.remove(row.path)
+                model.expandedFolders.insert(row.path)
             } else {
-                model.collapsedFolders.insert(row.path)
+                model.expandedFolders.remove(row.path)
             }
         }
     }
