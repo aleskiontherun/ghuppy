@@ -113,7 +113,7 @@ public enum MarkdownFiles {
 }
 
 /// The Files view's side pane: every folder holding a Markdown file, as deep
-/// as it lies, each open unless it has been closed.
+/// as it lies, each closed until it has been opened.
 public enum MarkdownTree {
     public struct Row: Identifiable, Hashable, Sendable {
         public enum Kind: Sendable { case folder, file }
@@ -158,16 +158,24 @@ public enum MarkdownTree {
         return rows
     }
 
-    /// `rows` without what lies inside the folders in `collapsed`, given
-    /// by their rows' paths.
-    public static func visible(_ rows: [Row], collapsed: Set<String>) -> [Row] {
-        guard !collapsed.isEmpty else { return rows }
+    /// `rows` without what lies inside the folders not in `expanded`,
+    /// given by their rows' paths.
+    public static func visible(_ rows: [Row], expanded: Set<String>) -> [Row] {
         var hiddenUnder: String?
         return rows.filter { row in
             if let hiddenUnder, row.path.hasPrefix(hiddenUnder) { return false }
-            hiddenUnder = row.kind == .folder && collapsed.contains(row.path) ? row.path + "/" : nil
+            hiddenUnder = row.kind == .folder && !expanded.contains(row.path) ? row.path + "/" : nil
             return true
         }
+    }
+
+    /// The folders to open for the file at `path` to show: every one it
+    /// lies in, by path, whether or not the rows show it as a folder of its
+    /// own or as part of one going on down through it.
+    public static func folders(leadingTo path: String) -> [String] {
+        var components = path.split(separator: "/").map(String.init)
+        components.removeLast()
+        return components.indices.map { components[...$0].joined(separator: "/") }
     }
 
     private static func append(_ node: Node, at path: String, depth: Int, to rows: inout [Row]) {
